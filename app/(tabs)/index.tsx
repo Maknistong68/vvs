@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, RefreshControl, StatusBar, TouchableOpacity, FlatList } from 'react-native';
-import { Text, ActivityIndicator } from 'react-native-paper';
+import { Text, ActivityIndicator, Searchbar } from 'react-native-paper';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { supabase, DashboardStats, EQUIPMENT_TYPES, VehicleEquipment, getEquipmentTypeConfig } from '../../lib/supabase';
+import { supabase, DashboardStats, EQUIPMENT_TYPES, VehicleEquipment, getEquipmentTypeConfig, getCategoryDisplay } from '../../lib/supabase';
+import { getErrorMessage } from '../../lib/constants';
 import { useAuth, useIsContractor } from '../../lib/auth';
 import { colors, statusColors, glass, roleColors } from '../../lib/theme';
 import GlassCard from '../../components/GlassCard';
@@ -20,6 +21,8 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [topEquipment, setTopEquipment] = useState<{type: string; count: number}[]>([]);
   const [contractorVehicles, setContractorVehicles] = useState<VehicleEquipment[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filteredVehicles, setFilteredVehicles] = useState<VehicleEquipment[]>([]);
 
   const fetchData = async () => {
     try {
@@ -88,8 +91,8 @@ export default function DashboardScreen() {
           setTopEquipment(sorted);
         }
       }
-    } catch (err: any) {
-      setError(err.message || 'Unknown error');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Unknown error'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -101,6 +104,20 @@ export default function DashboardScreen() {
       fetchData();
     }
   }, [authLoading, contractorLoading, isContractor, company?.id]);
+
+  // Filter vehicles based on search query
+  useEffect(() => {
+    if (!searchQuery) {
+      setFilteredVehicles(contractorVehicles);
+    } else {
+      const q = searchQuery.toLowerCase();
+      setFilteredVehicles(contractorVehicles.filter((v) =>
+        v.plate_number?.toLowerCase().includes(q) ||
+        v.driver_name?.toLowerCase().includes(q) ||
+        v.client_company?.toLowerCase().includes(q)
+      ));
+    }
+  }, [contractorVehicles, searchQuery]);
 
   const displayName = user?.full_name || user?.email?.split('@')[0] || 'User';
   const roleColor = roleColors[user?.role || 'inspector'];
@@ -136,7 +153,7 @@ export default function DashboardScreen() {
           </View>
           <View style={styles.vehicleInfo}>
             <Text style={styles.vehiclePlate}>{item.plate_number}</Text>
-            <Text style={styles.vehicleType}>{eq.label}</Text>
+            <Text style={styles.vehicleType}>{eq.label} - {getCategoryDisplay(item.equipment_category)}</Text>
             {item.driver_name && (
               <Text style={styles.vehicleDriver}>{item.driver_name}</Text>
             )}
@@ -226,15 +243,28 @@ export default function DashboardScreen() {
                 </GlassCard>
               )}
 
+              {/* Search Bar */}
+              <View style={styles.searchContainer}>
+                <Searchbar
+                  placeholder="Search plate, driver, company..."
+                  onChangeText={setSearchQuery}
+                  value={searchQuery}
+                  style={styles.search}
+                  iconColor={colors.textMuted}
+                  inputStyle={{ color: colors.textPrimary }}
+                  placeholderTextColor={colors.textMuted}
+                />
+              </View>
+
               {/* Equipment List Header */}
               <View style={styles.listHeader}>
                 <Text style={styles.listTitle}>Your Equipment</Text>
-                <Text style={styles.listCount}>{contractorVehicles.length} items</Text>
+                <Text style={styles.listCount}>{filteredVehicles.length} items</Text>
               </View>
 
               {/* Equipment List */}
               <FlatList
-                data={contractorVehicles}
+                data={filteredVehicles}
                 keyExtractor={(item) => item.id}
                 renderItem={renderContractorVehicle}
                 contentContainerStyle={styles.list}
@@ -440,4 +470,13 @@ const styles = StyleSheet.create({
 
   empty: { alignItems: 'center', margin: 16 },
   emptyText: { color: colors.textMuted, marginTop: 12 },
+
+  // Search
+  searchContainer: { paddingHorizontal: 10, marginBottom: 12 },
+  search: {
+    backgroundColor: glass.background.card,
+    borderRadius: glass.border.radius.md,
+    borderWidth: 1,
+    borderColor: glass.border.color,
+  },
 });
