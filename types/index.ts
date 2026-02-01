@@ -2,17 +2,21 @@
 export type {
   User,
   UserRole,
-  Vehicle,
-  VehicleType,
-  FailureReason,
+  VehicleEquipment,
+  EquipmentType,
+  EquipmentCategory,
+  VehicleStatus,
+  ExpectedStatus,
+  RejectionReason,
+  RejectionCategory,
   Inspection,
-  InspectionStatus,
-  InspectionStats,
-  FailureReasonStat,
+  DashboardStats,
   Company,
+  Project,
+  Gate,
 } from '../lib/supabase';
 
-export { VEHICLE_TYPES, getVehicleTypeConfig } from '../lib/supabase';
+export { EQUIPMENT_TYPES, getEquipmentTypeConfig, REJECTION_REASONS, REJECTION_CATEGORIES } from '../lib/supabase';
 
 // Navigation types
 export type RootStackParamList = {
@@ -35,26 +39,24 @@ export interface SignUpForm {
 }
 
 export interface InspectionForm {
-  vehicle_id: string;
+  vehicle_equipment_id: string;
   scheduled_date: Date;
-  status: 'pending' | 'pass' | 'fail';
-  failure_reason_id?: string;
-  odometer_reading?: number;
+  status: 'pending' | 'verified' | 'rejected';
+  reason_for_rejection?: string;
   notes?: string;
 }
 
-export interface VehicleForm {
-  name: string;
+export interface VehicleEquipmentForm {
   plate_number: string;
-  vehicle_type: string;
-  make?: string;
-  model?: string;
-  year?: number;
-  vin?: string;
-  notes?: string;
+  equipment_type: string;
+  equipment_category: string;
+  driver_name?: string;
+  national_id_number?: string;
+  year_of_manufacture?: number;
+  client_company?: string;
 }
 
-export interface FailureReasonForm {
+export interface RejectionReasonForm {
   reason_text: string;
   category?: string;
   is_active: boolean;
@@ -68,25 +70,22 @@ export interface CompanyForm {
   contact_phone?: string;
 }
 
+export interface ProjectForm {
+  name: string;
+  code?: string;
+}
+
+export interface GateForm {
+  name: string;
+  location?: string;
+  project_id?: string;
+}
+
 // Component props
 export interface StatCardProps {
   title: string;
   value: number | string;
   icon: string;
   color: string;
-}
-
-export interface InspectionCardProps {
-  inspection: {
-    id: string;
-    vehicle?: {
-      name: string;
-      plate_number: string;
-      vehicle_type?: string;
-    };
-    scheduled_date: string;
-    status: 'pending' | 'pass' | 'fail';
-    inspector?: { full_name: string };
-  };
-  onPress: () => void;
+  gradient?: string[];
 }

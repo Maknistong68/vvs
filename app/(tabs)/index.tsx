@@ -1,281 +1,443 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, RefreshControl, StatusBar } from 'react-native';
-import { Text, ActivityIndicator, Chip } from 'react-native-paper';
-import { useRouter } from 'expo-router';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, ScrollView, RefreshControl, StatusBar, TouchableOpacity, FlatList } from 'react-native';
+import { Text, ActivityIndicator } from 'react-native-paper';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { supabase, VehicleEquipment, EQUIPMENT_TYPES } from '../../lib/supabase';
-import { useAuth } from '../../lib/auth';
-import { colors } from '../../lib/theme';
-import StatCard from '../../components/StatCard';
+import { supabase, DashboardStats, EQUIPMENT_TYPES, VehicleEquipment, getEquipmentTypeConfig } from '../../lib/supabase';
+import { useAuth, useIsContractor } from '../../lib/auth';
+import { colors, statusColors, glass, roleColors } from '../../lib/theme';
 import GlassCard from '../../components/GlassCard';
-
-interface DashboardStats {
-  total: number;
-  verified: number;
-  rejected: number;
-  pending: number;
-  overdue: number;
-  blacklisted: number;
-}
+import GlassBackground from '../../components/GlassBackground';
+import StatCard from '../../components/StatCard';
 
 export default function DashboardScreen() {
-  const router = useRouter();
-  const { user, company } = useAuth();
+  const { user, company, loading: authLoading } = useAuth();
+  const { isContractor, loading: contractorLoading } = useIsContractor();
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<DashboardStats>({
+    total: 0, verified: 0, rejected: 0, pending: 0, overdue: 0, blacklisted: 0
+  });
   const [refreshing, setRefreshing] = useState(false);
-  const [stats, setStats] = useState<DashboardStats>({ total: 0, verified: 0, rejected: 0, pending: 0, overdue: 0, blacklisted: 0 });
-  const [recentVehicles, setRecentVehicles] = useState<VehicleEquipment[]>([]);
-  const [equipmentBreakdown, setEquipmentBreakdown] = useState<{ type: string; count: number; label: string }[]>([]);
+  const [topEquipment, setTopEquipment] = useState<{type: string; count: number}[]>([]);
+  const [contractorVehicles, setContractorVehicles] = useState<VehicleEquipment[]>([]);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = async () => {
     try {
-      const { data: vehicles } = await supabase.from('vehicles_equipment').select('*');
+      setError(null);
 
-      if (vehicles) {
-        const now = new Date();
-        const newStats: DashboardStats = {
-          total: vehicles.length,
-          verified: vehicles.filter(v => v.actual_status === 'verified').length,
-          rejected: vehicles.filter(v => v.actual_status === 'rejected').length,
-          pending: vehicles.filter(v => v.actual_status === 'pending').length,
-          overdue: vehicles.filter(v => v.next_inspection_date && new Date(v.next_inspection_date) < now).length,
-          blacklisted: vehicles.filter(v => v.is_blacklisted).length,
-        };
-        setStats(newStats);
+      if (isContractor && company?.id) {
+        // Contractor: Fetch only their company's equipment
+        const { data: vehicles, error: vehicleError } = await supabase
+          .from('vehicles_equipment')
+          .select('*')
+          .eq('company_id', company.id)
+          .order('plate_number');
 
-        // Equipment breakdown
-        const breakdown: Record<string, number> = {};
-        vehicles.forEach(v => {
-          breakdown[v.equipment_type] = (breakdown[v.equipment_type] || 0) + 1;
-        });
+        if (vehicleError) {
+          setError(vehicleError.message);
+        } else if (vehicles) {
+          setContractorVehicles(vehicles);
+          // Calculate stats for contractor
+          setStats({
+            total: vehicles.length,
+            verified: vehicles.filter(v => v.actual_status === 'verified').length,
+            rejected: vehicles.filter(v => v.actual_status === 'rejected').length,
+            pending: vehicles.filter(v => v.actual_status === 'pending').length,
+            overdue: vehicles.filter(v => v.next_inspection_date && new Date(v.next_inspection_date) < new Date()).length,
+            blacklisted: vehicles.filter(v => v.is_blacklisted).length,
+          });
+        }
+      } else {
+        // Admin/Owner/Inspector: Fetch all stats
+        const [totalRes, verifiedRes, rejectedRes, pendingRes, overdueRes, blacklistedRes] = await Promise.all([
+          supabase.from('vehicles_equipment').select('*', { count: 'exact', head: true }),
+          supabase.from('vehicles_equipment').select('*', { count: 'exact', head: true }).eq('actual_status', 'verified'),
+          supabase.from('vehicles_equipment').select('*', { count: 'exact', head: true }).eq('actual_status', 'rejected'),
+          supabase.from('vehicles_equipment').select('*', { count: 'exact', head: true }).eq('actual_status', 'pending'),
+          supabase.from('vehicles_equipment').select('*', { count: 'exact', head: true }).lt('next_inspection_date', new Date().toISOString().split('T')[0]),
+          supabase.from('vehicles_equipment').select('*', { count: 'exact', head: true }).eq('is_blacklisted', true),
+        ]);
 
-        const sorted = Object.entries(breakdown)
-          .map(([type, count]) => ({
-            type,
-            count,
-            label: EQUIPMENT_TYPES.find(t => t.value === type)?.label || type
-          }))
-          .sort((a, b) => b.count - a.count)
-          .slice(0, 8);
+        if (totalRes.error) {
+          setError(totalRes.error.message);
+        } else {
+          setStats({
+            total: totalRes.count || 0,
+            verified: verifiedRes.count || 0,
+            rejected: rejectedRes.count || 0,
+            pending: pendingRes.count || 0,
+            overdue: overdueRes.count || 0,
+            blacklisted: blacklistedRes.count || 0,
+          });
+        }
 
-        setEquipmentBreakdown(sorted);
+        // Fetch equipment type breakdown
+        const { data: vehicles } = await supabase
+          .from('vehicles_equipment')
+          .select('equipment_type');
 
-        // Recent vehicles
-        const recent = [...vehicles]
-          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-          .slice(0, 5);
-        setRecentVehicles(recent);
+        if (vehicles) {
+          const typeCounts: Record<string, number> = {};
+          vehicles.forEach(v => {
+            typeCounts[v.equipment_type] = (typeCounts[v.equipment_type] || 0) + 1;
+          });
+          const sorted = Object.entries(typeCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([type, count]) => ({ type, count }));
+          setTopEquipment(sorted);
+        }
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      setError(err.message || 'Unknown error');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  const onRefresh = () => { setRefreshing(true); fetchData(); };
-
-  const displayName = user?.full_name && !user.full_name.includes('@')
-    ? user.full_name
-    : user?.email?.split('@')[0] || 'User';
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'verified': return colors.success;
-      case 'rejected': return colors.error;
-      default: return colors.warning;
-    }
   };
 
-  const getRoleColor = (role: string) => {
-    switch (role) {
-      case 'owner': return colors.warning;
-      case 'admin': return colors.primary;
-      default: return colors.success;
+  useEffect(() => {
+    if (!authLoading && !contractorLoading) {
+      fetchData();
     }
-  };
+  }, [authLoading, contractorLoading, isContractor, company?.id]);
 
-  if (loading) {
+  const displayName = user?.full_name || user?.email?.split('@')[0] || 'User';
+  const roleColor = roleColors[user?.role || 'inspector'];
+
+  if (authLoading || contractorLoading || loading) {
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
+      <GlassBackground>
+        <View style={styles.loading}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>
+            {authLoading ? 'Authenticating...' : 'Loading dashboard...'}
+          </Text>
+        </View>
+      </GlassBackground>
     );
   }
 
-  return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
+  const getTypeLabel = (type: string) => {
+    const config = EQUIPMENT_TYPES.find(t => t.value === type);
+    return config?.label || type;
+  };
+
+  const renderContractorVehicle = ({ item }: { item: VehicleEquipment }) => {
+    const sc = statusColors[item.actual_status] || statusColors.pending;
+    const eq = getEquipmentTypeConfig(item.equipment_type);
+    const isOverdue = item.next_inspection_date && new Date(item.next_inspection_date) < new Date();
+
+    return (
+      <GlassCard style={styles.vehicleCard} padding={14}>
+        <View style={styles.vehicleRow}>
+          <View style={[styles.vehicleIcon, { backgroundColor: `${colors.primary}15` }]}>
+            <MaterialCommunityIcons name={eq.icon} size={24} color={colors.primary} />
+          </View>
+          <View style={styles.vehicleInfo}>
+            <Text style={styles.vehiclePlate}>{item.plate_number}</Text>
+            <Text style={styles.vehicleType}>{eq.label}</Text>
+            {item.driver_name && (
+              <Text style={styles.vehicleDriver}>{item.driver_name}</Text>
+            )}
+          </View>
+          <View>
+            <View style={[styles.badge, { backgroundColor: sc.bg }]}>
+              <MaterialCommunityIcons name={sc.icon} size={12} color={sc.text} />
+              <Text style={[styles.badgeText, { color: sc.text }]}>
+                {item.actual_status.charAt(0).toUpperCase() + item.actual_status.slice(1)}
+              </Text>
+            </View>
+            {isOverdue && (
+              <View style={[styles.badge, { backgroundColor: `${colors.error}15`, marginTop: 4 }]}>
+                <MaterialCommunityIcons name="calendar-alert" size={12} color={colors.error} />
+                <Text style={[styles.badgeText, { color: colors.error }]}>Overdue</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </GlassCard>
+    );
+  };
+
+  // Contractor Dashboard
+  if (isContractor) {
+    return (
+      <GlassBackground>
+        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <View style={styles.container}>
+          <View style={styles.header}>
             <Text style={styles.greeting}>Welcome back,</Text>
             <Text style={styles.name}>{displayName}</Text>
-            <View style={styles.badges}>
-              <Chip mode="flat" style={[styles.chip, { backgroundColor: `${getRoleColor(user?.role || 'inspector')}20` }]} textStyle={[styles.chipText, { color: getRoleColor(user?.role || 'inspector') }]}>
-                {(user?.role || 'inspector').charAt(0).toUpperCase() + (user?.role || 'inspector').slice(1)}
-              </Chip>
+            <View style={[styles.roleBadge, { backgroundColor: `${roleColor}20` }]}>
+              <MaterialCommunityIcons name="briefcase-account" size={14} color={roleColor} />
+              <Text style={[styles.roleText, { color: roleColor }]}>Contractor</Text>
+            </View>
+          </View>
+
+          {error ? (
+            <GlassCard style={styles.errorCard} padding={20}>
+              <MaterialCommunityIcons name="alert-circle" size={32} color={colors.error} />
+              <Text style={styles.errorText}>{error}</Text>
+              <TouchableOpacity onPress={fetchData} style={styles.retryBtn}>
+                <Text style={styles.retryText}>Tap to Retry</Text>
+              </TouchableOpacity>
+            </GlassCard>
+          ) : (
+            <>
+              {/* Contractor Stats Summary */}
+              <View style={styles.statsGrid}>
+                <StatCard
+                  title="Total"
+                  value={stats.total}
+                  icon="car-multiple"
+                  color={colors.primary}
+                />
+                <StatCard
+                  title="Verified"
+                  value={stats.verified}
+                  icon="check-circle"
+                  color={colors.success}
+                />
+                <StatCard
+                  title="Pending"
+                  value={stats.pending}
+                  icon="clock-outline"
+                  color={colors.warning}
+                />
+                <StatCard
+                  title="Rejected"
+                  value={stats.rejected}
+                  icon="close-circle"
+                  color={colors.error}
+                />
+              </View>
+
+              {/* Company Info */}
               {company && (
-                <Chip mode="flat" style={styles.chipOutline} textStyle={styles.chipText}>{company.name}</Chip>
+                <GlassCard style={styles.companyCard} padding={16}>
+                  <View style={styles.companyRow}>
+                    <MaterialCommunityIcons name="domain" size={20} color={colors.primary} />
+                    <Text style={styles.companyName}>{company.name}</Text>
+                    <View style={styles.companyCode}>
+                      <Text style={styles.codeText}>{company.code}</Text>
+                    </View>
+                  </View>
+                </GlassCard>
               )}
-            </View>
-          </View>
-          <View style={styles.avatar}>
-            <MaterialCommunityIcons name="account" size={28} color={colors.primary} />
-          </View>
-        </View>
 
-        {/* Stats Grid */}
-        <Text style={styles.sectionTitle}>Overview</Text>
-        <View style={styles.statsGrid}>
-          <StatCard title="Total" value={stats.total} icon="car-multiple" color={colors.primary} />
-          <StatCard title="Verified" value={stats.verified} icon="check-circle" color={colors.success} />
-          <StatCard title="Rejected" value={stats.rejected} icon="close-circle" color={colors.error} />
-          <StatCard title="Pending" value={stats.pending} icon="clock-outline" color={colors.warning} />
-        </View>
+              {/* Equipment List Header */}
+              <View style={styles.listHeader}>
+                <Text style={styles.listTitle}>Your Equipment</Text>
+                <Text style={styles.listCount}>{contractorVehicles.length} items</Text>
+              </View>
 
-        {/* Additional Stats */}
-        <View style={styles.statsRow}>
-          <GlassCard style={styles.miniStat} padding={16}>
-            <View style={styles.miniStatRow}>
-              <MaterialCommunityIcons name="calendar-alert" size={24} color={colors.error} />
-              <View style={styles.miniStatInfo}>
-                <Text style={styles.miniStatValue}>{stats.overdue}</Text>
-                <Text style={styles.miniStatLabel}>Overdue</Text>
-              </View>
-            </View>
-          </GlassCard>
-          <GlassCard style={styles.miniStat} padding={16}>
-            <View style={styles.miniStatRow}>
-              <MaterialCommunityIcons name="cancel" size={24} color={colors.textMuted} />
-              <View style={styles.miniStatInfo}>
-                <Text style={styles.miniStatValue}>{stats.blacklisted}</Text>
-                <Text style={styles.miniStatLabel}>Blacklisted</Text>
-              </View>
-            </View>
-          </GlassCard>
-        </View>
-
-        {/* Quick Actions */}
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionsScroll}>
-          <GlassCard onPress={() => router.push('/(tabs)/inspections')} style={styles.actionCard} padding={14}>
-            <View style={[styles.actionIcon, { backgroundColor: `${colors.primary}20` }]}>
-              <MaterialCommunityIcons name="clipboard-check" size={24} color={colors.primary} />
-            </View>
-            <Text style={styles.actionText}>Inspect</Text>
-          </GlassCard>
-          <GlassCard onPress={() => router.push('/(tabs)/admin')} style={styles.actionCard} padding={14}>
-            <View style={[styles.actionIcon, { backgroundColor: `${colors.secondary}20` }]}>
-              <MaterialCommunityIcons name="car-multiple" size={24} color={colors.secondary} />
-            </View>
-            <Text style={styles.actionText}>Vehicles</Text>
-          </GlassCard>
-          <GlassCard onPress={() => router.push('/(tabs)/certificates')} style={styles.actionCard} padding={14}>
-            <View style={[styles.actionIcon, { backgroundColor: `${colors.success}20` }]}>
-              <MaterialCommunityIcons name="certificate" size={24} color={colors.success} />
-            </View>
-            <Text style={styles.actionText}>Certs</Text>
-          </GlassCard>
-          <GlassCard onPress={() => router.push('/(tabs)/settings')} style={styles.actionCard} padding={14}>
-            <View style={[styles.actionIcon, { backgroundColor: `${colors.warning}20` }]}>
-              <MaterialCommunityIcons name="cog" size={24} color={colors.warning} />
-            </View>
-            <Text style={styles.actionText}>Settings</Text>
-          </GlassCard>
-        </ScrollView>
-
-        {/* Equipment Breakdown */}
-        <Text style={styles.sectionTitle}>Equipment Breakdown</Text>
-        <GlassCard style={styles.section} padding={16}>
-          {equipmentBreakdown.map((item, idx) => (
-            <View key={item.type} style={styles.breakdownRow}>
-              <View style={styles.breakdownLabel}>
-                <Text style={styles.breakdownRank}>#{idx + 1}</Text>
-                <Text style={styles.breakdownText} numberOfLines={1}>{item.label}</Text>
-              </View>
-              <View style={styles.breakdownBar}>
-                <View style={[styles.breakdownFill, { width: `${Math.min((item.count / stats.total) * 100, 100)}%` }]} />
-              </View>
-              <Text style={styles.breakdownCount}>{item.count}</Text>
-            </View>
-          ))}
-        </GlassCard>
-
-        {/* Recent Vehicles */}
-        <Text style={styles.sectionTitle}>Recent Vehicles</Text>
-        <GlassCard style={styles.section} padding={16}>
-          {recentVehicles.length > 0 ? recentVehicles.map((v) => {
-            const eq = EQUIPMENT_TYPES.find(t => t.value === v.equipment_type);
-            return (
-              <View key={v.id} style={styles.recentItem}>
-                <View style={[styles.recentIcon, { backgroundColor: `${colors.primary}15` }]}>
-                  <MaterialCommunityIcons name={eq?.icon || 'car'} size={20} color={colors.primary} />
-                </View>
-                <View style={styles.recentInfo}>
-                  <Text style={styles.recentPlate}>{v.plate_number}</Text>
-                  <Text style={styles.recentType}>{eq?.label || v.equipment_type}</Text>
-                </View>
-                <View style={[styles.statusDot, { backgroundColor: getStatusColor(v.actual_status) }]} />
-              </View>
-            );
-          }) : (
-            <Text style={styles.emptyText}>No vehicles yet</Text>
+              {/* Equipment List */}
+              <FlatList
+                data={contractorVehicles}
+                keyExtractor={(item) => item.id}
+                renderItem={renderContractorVehicle}
+                contentContainerStyle={styles.list}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={() => { setRefreshing(true); fetchData(); }}
+                    tintColor={colors.primary}
+                  />
+                }
+                ListEmptyComponent={
+                  <GlassCard style={styles.empty} padding={32}>
+                    <MaterialCommunityIcons name="car-off" size={48} color={colors.textMuted} />
+                    <Text style={styles.emptyText}>No equipment registered</Text>
+                  </GlassCard>
+                }
+              />
+            </>
           )}
-        </GlassCard>
+        </View>
+      </GlassBackground>
+    );
+  }
+
+  // Admin/Owner/Inspector Dashboard
+  return (
+    <GlassBackground>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => { setRefreshing(true); fetchData(); }}
+            tintColor={colors.primary}
+          />
+        }
+      >
+        <View style={styles.header}>
+          <Text style={styles.greeting}>Welcome back,</Text>
+          <Text style={styles.name}>{displayName}</Text>
+          <View style={[styles.roleBadge, { backgroundColor: `${roleColor}20` }]}>
+            <MaterialCommunityIcons
+              name={user?.role === 'owner' ? 'crown' : user?.role === 'admin' ? 'shield-account' : 'account-check'}
+              size={14}
+              color={roleColor}
+            />
+            <Text style={[styles.roleText, { color: roleColor }]}>
+              {(user?.role || 'inspector').charAt(0).toUpperCase() + (user?.role || 'inspector').slice(1)}
+            </Text>
+          </View>
+        </View>
+
+        {error ? (
+          <GlassCard variant="error" style={styles.errorCard} padding={20}>
+            <MaterialCommunityIcons name="alert-circle" size={32} color={colors.error} />
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity onPress={fetchData} style={styles.retryBtn}>
+              <Text style={styles.retryText}>Tap to Retry</Text>
+            </TouchableOpacity>
+          </GlassCard>
+        ) : (
+          <>
+            {/* Main Stats Grid */}
+            <View style={styles.statsGrid}>
+              <StatCard
+                title="Total"
+                value={stats.total}
+                icon="car-multiple"
+                color={colors.primary}
+              />
+              <StatCard
+                title="Verified"
+                value={stats.verified}
+                icon="check-circle"
+                color={colors.success}
+              />
+              <StatCard
+                title="Rejected"
+                value={stats.rejected}
+                icon="close-circle"
+                color={colors.error}
+              />
+              <StatCard
+                title="Pending"
+                value={stats.pending}
+                icon="clock-outline"
+                color={colors.warning}
+              />
+            </View>
+
+            {/* Alert Cards */}
+            {(stats.overdue > 0 || stats.blacklisted > 0) && (
+              <View style={styles.alertsRow}>
+                {stats.overdue > 0 && (
+                  <GlassCard variant="warning" style={styles.alertCard} padding={12}>
+                    <View style={styles.alertContent}>
+                      <MaterialCommunityIcons name="calendar-alert" size={20} color={colors.warning} />
+                      <Text style={styles.alertNumber}>{stats.overdue}</Text>
+                      <Text style={styles.alertLabel}>Overdue</Text>
+                    </View>
+                  </GlassCard>
+                )}
+                {stats.blacklisted > 0 && (
+                  <GlassCard variant="error" style={styles.alertCard} padding={12}>
+                    <View style={styles.alertContent}>
+                      <MaterialCommunityIcons name="cancel" size={20} color={colors.error} />
+                      <Text style={styles.alertNumber}>{stats.blacklisted}</Text>
+                      <Text style={styles.alertLabel}>Blacklisted</Text>
+                    </View>
+                  </GlassCard>
+                )}
+              </View>
+            )}
+
+            {/* Top Equipment Types */}
+            {topEquipment.length > 0 && (
+              <GlassCard style={styles.chartCard} padding={16}>
+                <Text style={styles.sectionTitle}>Top Equipment Types</Text>
+                {topEquipment.map((item, index) => (
+                  <View key={item.type} style={styles.barRow}>
+                    <Text style={styles.barLabel}>{getTypeLabel(item.type)}</Text>
+                    <View style={styles.barContainer}>
+                      <View
+                        style={[
+                          styles.bar,
+                          { width: `${(item.count / stats.total) * 100}%` }
+                        ]}
+                      />
+                    </View>
+                    <Text style={styles.barCount}>{item.count}</Text>
+                  </View>
+                ))}
+              </GlassCard>
+            )}
+          </>
+        )}
 
         <View style={{ height: 100 }} />
       </ScrollView>
-    </View>
+    </GlassBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  loading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+  container: { flex: 1 },
+  loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { color: colors.textMuted, marginTop: 12, fontSize: 14 },
   scroll: { padding: 16, paddingTop: 50 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
-  headerLeft: { flex: 1 },
+  header: { paddingTop: 50, paddingHorizontal: 16, paddingBottom: 12 },
   greeting: { color: colors.textSecondary, fontSize: 14 },
-  name: { color: colors.textPrimary, fontSize: 24, fontWeight: 'bold', marginBottom: 8 },
-  badges: { flexDirection: 'row', gap: 8 },
-  chip: { height: 28 },
-  chipOutline: { height: 28, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.cardBorder },
-  chipText: { color: colors.textPrimary, fontSize: 11 },
-  avatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: `${colors.primary}15`, justifyContent: 'center', alignItems: 'center' },
-  sectionTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '600', marginTop: 16, marginBottom: 10 },
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -6 },
-  statsRow: { flexDirection: 'row', marginTop: 8, marginHorizontal: -6 },
-  miniStat: { flex: 1, marginHorizontal: 6 },
-  miniStatRow: { flexDirection: 'row', alignItems: 'center' },
-  miniStatInfo: { marginLeft: 12 },
-  miniStatValue: { color: colors.textPrimary, fontSize: 20, fontWeight: 'bold' },
-  miniStatLabel: { color: colors.textMuted, fontSize: 12 },
-  actionsScroll: { marginHorizontal: -8 },
-  actionCard: { width: 80, alignItems: 'center', marginHorizontal: 4 },
-  actionIcon: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginBottom: 6 },
-  actionText: { color: colors.textPrimary, fontSize: 12 },
-  section: { marginHorizontal: 0 },
-  breakdownRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  breakdownLabel: { width: 130, flexDirection: 'row', alignItems: 'center' },
-  breakdownRank: { color: colors.textMuted, fontSize: 12, width: 24 },
-  breakdownText: { color: colors.textSecondary, fontSize: 12, flex: 1 },
-  breakdownBar: { flex: 1, height: 8, backgroundColor: colors.surfaceLight, borderRadius: 4, marginHorizontal: 8 },
-  breakdownFill: { height: '100%', backgroundColor: colors.primary, borderRadius: 4 },
-  breakdownCount: { color: colors.textPrimary, fontSize: 13, fontWeight: '600', width: 36, textAlign: 'right' },
-  recentItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.cardBorder },
-  recentIcon: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
-  recentInfo: { flex: 1, marginLeft: 12 },
-  recentPlate: { color: colors.textPrimary, fontSize: 14, fontWeight: '600' },
-  recentType: { color: colors.textMuted, fontSize: 12 },
-  statusDot: { width: 10, height: 10, borderRadius: 5 },
-  emptyText: { color: colors.textMuted, textAlign: 'center', paddingVertical: 20 },
+  name: { color: colors.textPrimary, fontSize: 26, fontWeight: 'bold', marginBottom: 8 },
+  roleBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, alignSelf: 'flex-start', gap: 6 },
+  roleText: { fontWeight: '600', fontSize: 13 },
+
+  // Stats Grid
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: 10, marginBottom: 8 },
+
+  // Alert Cards
+  alertsRow: { flexDirection: 'row', marginHorizontal: 10, marginBottom: 8 },
+  alertCard: { flex: 1, marginHorizontal: 6 },
+  alertContent: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  alertNumber: { color: colors.textPrimary, fontSize: 20, fontWeight: 'bold' },
+  alertLabel: { color: colors.textMuted, fontSize: 12 },
+
+  // Chart Card
+  chartCard: { marginHorizontal: 10, marginBottom: 16 },
+  sectionTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '600', marginBottom: 12 },
+  barRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  barLabel: { color: colors.textSecondary, fontSize: 11, width: 100 },
+  barContainer: { flex: 1, height: 8, backgroundColor: glass.background.card, borderRadius: 4, marginHorizontal: 8 },
+  bar: { height: 8, backgroundColor: colors.primary, borderRadius: 4 },
+  barCount: { color: colors.textMuted, fontSize: 12, width: 40, textAlign: 'right' },
+
+  // Error Card
+  errorCard: { alignItems: 'center', marginHorizontal: 10, marginBottom: 16 },
+  errorText: { color: colors.error, fontSize: 14, marginTop: 8, textAlign: 'center' },
+  retryBtn: { marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: colors.primary, borderRadius: 8 },
+  retryText: { color: colors.textPrimary, fontWeight: '600' },
+
+  // Contractor specific
+  companyCard: { marginHorizontal: 10, marginBottom: 12 },
+  companyRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  companyName: { flex: 1, color: colors.textPrimary, fontSize: 16, fontWeight: '600' },
+  companyCode: { backgroundColor: `${colors.primary}20`, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  codeText: { color: colors.primary, fontSize: 12, fontWeight: '600' },
+
+  listHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, marginBottom: 8 },
+  listTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '600' },
+  listCount: { color: colors.textMuted, fontSize: 13 },
+  list: { paddingHorizontal: 10, paddingBottom: 120 },
+
+  // Vehicle Card
+  vehicleCard: { marginBottom: 4 },
+  vehicleRow: { flexDirection: 'row', alignItems: 'center' },
+  vehicleIcon: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  vehicleInfo: { flex: 1 },
+  vehiclePlate: { color: colors.textPrimary, fontWeight: '700', fontSize: 15 },
+  vehicleType: { color: colors.textSecondary, fontSize: 12 },
+  vehicleDriver: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
+  badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, gap: 4 },
+  badgeText: { fontSize: 10, fontWeight: '600' },
+
+  empty: { alignItems: 'center', margin: 16 },
+  emptyText: { color: colors.textMuted, marginTop: 12 },
 });

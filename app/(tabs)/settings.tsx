@@ -5,8 +5,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../lib/auth';
-import { colors, gradients } from '../../lib/theme';
+import { colors, gradients, glass, roleColors } from '../../lib/theme';
 import GlassCard from '../../components/GlassCard';
+import GlassBackground from '../../components/GlassBackground';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -19,19 +20,22 @@ export default function SettingsScreen() {
     ]);
   };
 
-  const getRoleColor = (role: string) => {
+  const getRoleColor = (role: string) => roleColors[role] || colors.success;
+
+  const getRoleIcon = (role: string) => {
     switch (role) {
-      case 'owner': return colors.warning;
-      case 'admin': return colors.primary;
-      default: return colors.success;
+      case 'owner': return 'crown';
+      case 'admin': return 'shield-account';
+      case 'contractor': return 'briefcase-account';
+      default: return 'account-check';
     }
   };
 
   const displayName = user?.full_name && !user.full_name.includes('@') ? user.full_name : user?.email?.split('@')[0] || 'User';
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+    <GlassBackground>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Text style={styles.title}>Profile</Text>
@@ -40,17 +44,19 @@ export default function SettingsScreen() {
         {/* Profile Card */}
         <GlassCard elevated style={styles.profileCard} padding={24}>
           <View style={styles.profileContent}>
-            <Avatar.Icon
-              size={72}
-              icon="account"
-              style={[styles.avatar, { backgroundColor: getRoleColor(user?.role || 'inspector') }]}
-              color={colors.white}
-            />
+            <View style={[styles.avatarContainer, { borderColor: getRoleColor(user?.role || 'inspector') }]}>
+              <Avatar.Icon
+                size={72}
+                icon={getRoleIcon(user?.role || 'inspector')}
+                style={[styles.avatar, { backgroundColor: getRoleColor(user?.role || 'inspector') }]}
+                color={colors.white}
+              />
+            </View>
             <Text style={styles.name}>{displayName}</Text>
             <Text style={styles.email}>{user?.email || ''}</Text>
             <View style={[styles.roleBadge, { backgroundColor: `${getRoleColor(user?.role || 'inspector')}20` }]}>
               <MaterialCommunityIcons
-                name={user?.role === 'owner' ? 'crown' : user?.role === 'admin' ? 'shield-account' : 'account'}
+                name={getRoleIcon(user?.role || 'inspector')}
                 size={14}
                 color={getRoleColor(user?.role || 'inspector')}
               />
@@ -66,13 +72,31 @@ export default function SettingsScreen() {
           <GlassCard style={styles.infoCard} padding={0}>
             <List.Section>
               <List.Subheader style={styles.sectionHeader}>COMPANY</List.Subheader>
-              <List.Item title="Name" description={company.name} titleStyle={styles.listTitle} descriptionStyle={styles.listDesc} left={(props) => <List.Icon {...props} icon="domain" color={colors.primary} />} />
+              <List.Item
+                title="Name"
+                description={company.name}
+                titleStyle={styles.listTitle}
+                descriptionStyle={styles.listDesc}
+                left={(props) => <List.Icon {...props} icon="domain" color={colors.primary} />}
+              />
               <Divider style={styles.divider} />
-              <List.Item title="Code" description={company.code} titleStyle={styles.listTitle} descriptionStyle={styles.listDesc} left={(props) => <List.Icon {...props} icon="identifier" color={colors.primary} />} />
+              <List.Item
+                title="Code"
+                description={company.code}
+                titleStyle={styles.listTitle}
+                descriptionStyle={styles.listDesc}
+                left={(props) => <List.Icon {...props} icon="identifier" color={colors.primary} />}
+              />
               {company.contact_email && (
                 <>
                   <Divider style={styles.divider} />
-                  <List.Item title="Email" description={company.contact_email} titleStyle={styles.listTitle} descriptionStyle={styles.listDesc} left={(props) => <List.Icon {...props} icon="email" color={colors.primary} />} />
+                  <List.Item
+                    title="Email"
+                    description={company.contact_email}
+                    titleStyle={styles.listTitle}
+                    descriptionStyle={styles.listDesc}
+                    left={(props) => <List.Icon {...props} icon="email" color={colors.primary} />}
+                  />
                 </>
               )}
             </List.Section>
@@ -83,7 +107,13 @@ export default function SettingsScreen() {
         <GlassCard style={styles.infoCard} padding={0}>
           <List.Section>
             <List.Subheader style={styles.sectionHeader}>ACCOUNT</List.Subheader>
-            <List.Item title="Email" description={user?.email || 'N/A'} titleStyle={styles.listTitle} descriptionStyle={styles.listDesc} left={(props) => <List.Icon {...props} icon="email" color={colors.primary} />} />
+            <List.Item
+              title="Email"
+              description={user?.email || 'N/A'}
+              titleStyle={styles.listTitle}
+              descriptionStyle={styles.listDesc}
+              left={(props) => <List.Icon {...props} icon="email" color={colors.primary} />}
+            />
             <Divider style={styles.divider} />
             <List.Item
               title="Member Since"
@@ -99,16 +129,41 @@ export default function SettingsScreen() {
         <GlassCard style={styles.infoCard} padding={0}>
           <List.Section>
             <List.Subheader style={styles.sectionHeader}>ABOUT</List.Subheader>
-            <List.Item title="App Version" description="2.0.0" titleStyle={styles.listTitle} descriptionStyle={styles.listDesc} left={(props) => <List.Icon {...props} icon="information" color={colors.primary} />} />
+            <List.Item
+              title="App Version"
+              description="2.0.0"
+              titleStyle={styles.listTitle}
+              descriptionStyle={styles.listDesc}
+              left={(props) => <List.Icon {...props} icon="information" color={colors.primary} />}
+            />
             <Divider style={styles.divider} />
-            <List.Item title="VVS Inspection" description="Vehicle Verification System" titleStyle={styles.listTitle} descriptionStyle={styles.listDesc} left={(props) => <List.Icon {...props} icon="car-multiple" color={colors.primary} />} />
+            <List.Item
+              title="VVS Inspection"
+              description="Vehicle Verification System"
+              titleStyle={styles.listTitle}
+              descriptionStyle={styles.listDesc}
+              left={(props) => <List.Icon {...props} icon="car-multiple" color={colors.primary} />}
+            />
           </List.Section>
         </GlassCard>
 
         {/* Logout */}
         <View style={styles.logoutContainer}>
-          <LinearGradient colors={gradients.error as [string, string, ...string[]]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.gradientBtn}>
-            <Button mode="contained" onPress={handleLogout} style={styles.logoutBtn} contentStyle={styles.logoutContent} labelStyle={styles.logoutLabel} buttonColor="transparent" icon="logout">
+          <LinearGradient
+            colors={gradients.error as [string, string, ...string[]]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.gradientBtn}
+          >
+            <Button
+              mode="contained"
+              onPress={handleLogout}
+              style={styles.logoutBtn}
+              contentStyle={styles.logoutContent}
+              labelStyle={styles.logoutLabel}
+              buttonColor="transparent"
+              icon="logout"
+            >
               Logout
             </Button>
           </LinearGradient>
@@ -116,30 +171,42 @@ export default function SettingsScreen() {
 
         <View style={{ height: 100 }} />
       </ScrollView>
-    </View>
+    </GlassBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: 16 },
   header: { paddingTop: 50, paddingBottom: 12 },
-  title: { color: colors.textPrimary, fontSize: 24, fontWeight: 'bold' },
+  title: { color: colors.textPrimary, fontSize: 26, fontWeight: 'bold' },
   profileCard: { marginHorizontal: 0, marginBottom: 16 },
   profileContent: { alignItems: 'center' },
-  avatar: { marginBottom: 12 },
-  name: { color: colors.textPrimary, fontSize: 20, fontWeight: 'bold', marginBottom: 4 },
+  avatarContainer: {
+    borderWidth: 3,
+    borderRadius: 42,
+    padding: 3,
+    marginBottom: 12,
+  },
+  avatar: { },
+  name: { color: colors.textPrimary, fontSize: 22, fontWeight: 'bold', marginBottom: 4 },
   email: { color: colors.textSecondary, fontSize: 14, marginBottom: 12 },
-  roleBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, gap: 6 },
+  roleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 6
+  },
   roleText: { fontWeight: '600', fontSize: 13 },
   infoCard: { marginHorizontal: 0, marginBottom: 16 },
   sectionHeader: { color: colors.textMuted, fontSize: 11, fontWeight: '600', letterSpacing: 1 },
   listTitle: { color: colors.textSecondary, fontSize: 12 },
   listDesc: { color: colors.textPrimary, fontSize: 14 },
-  divider: { backgroundColor: colors.cardBorder },
-  logoutContainer: { marginTop: 8, borderRadius: 12, overflow: 'hidden' },
-  gradientBtn: { borderRadius: 12 },
-  logoutBtn: { borderRadius: 12 },
+  divider: { backgroundColor: glass.border.color },
+  logoutContainer: { marginTop: 8, borderRadius: glass.border.radius.md, overflow: 'hidden' },
+  gradientBtn: { borderRadius: glass.border.radius.md },
+  logoutBtn: { borderRadius: glass.border.radius.md },
   logoutContent: { paddingVertical: 6 },
   logoutLabel: { color: colors.white, fontSize: 15, fontWeight: '600' },
 });

@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet, FlatList, RefreshControl, StatusBar, Alert, ScrollView } from 'react-native';
-import { Text, FAB, Searchbar, ActivityIndicator, SegmentedButtons, Dialog, Portal, Button, TextInput, Menu, RadioButton } from 'react-native-paper';
+import { Text, Searchbar, ActivityIndicator, SegmentedButtons, Dialog, Portal, Button, TextInput, Menu, RadioButton } from 'react-native-paper';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { supabase, VehicleEquipment, RejectionReason, EQUIPMENT_TYPES, REJECTION_REASONS, getEquipmentTypeConfig } from '../../lib/supabase';
+import { supabase, VehicleEquipment, RejectionReason, getEquipmentTypeConfig } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, statusColors } from '../../lib/theme';
+import { colors, statusColors, glass } from '../../lib/theme';
 import GlassCard from '../../components/GlassCard';
+import GlassBackground from '../../components/GlassBackground';
 
 export default function InspectionsScreen() {
-  const { user, company } = useAuth();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [vehicles, setVehicles] = useState<VehicleEquipment[]>([]);
@@ -32,11 +33,19 @@ export default function InspectionsScreen() {
         supabase.from('vehicles_equipment').select('*').order('plate_number'),
         supabase.from('rejection_reasons').select('*').eq('is_active', true).order('reason_text'),
       ]);
-      if (vehiclesRes.data) {
+
+      if (vehiclesRes.error) {
+        console.error('Vehicles error:', vehiclesRes.error.message);
+      } else if (vehiclesRes.data) {
         setVehicles(vehiclesRes.data);
         setFilteredVehicles(vehiclesRes.data);
       }
-      if (reasonsRes.data) setRejectionReasons(reasonsRes.data);
+
+      if (reasonsRes.error) {
+        console.error('Reasons error:', reasonsRes.error.message);
+      } else if (reasonsRes.data) {
+        setRejectionReasons(reasonsRes.data);
+      }
     } catch (error) {
       console.error('Error:', error);
     } finally {
@@ -78,15 +87,16 @@ export default function InspectionsScreen() {
 
     setSubmitting(true);
     try {
-      // Update vehicle status
-      const updateData: any = {
+      const now = new Date();
+      const rejectionText = inspectionResult === 'rejected'
+        ? (inspectionNotes ? `${selectedReason} - Notes: ${inspectionNotes}` : selectedReason)
+        : null;
+      const updateData: Partial<VehicleEquipment> & { modified_at?: string } = {
         actual_status: inspectionResult,
-        last_inspection_date: new Date().toISOString(),
-        reason_for_rejection: inspectionResult === 'rejected' ? selectedReason : null,
-        modified_at: new Date().toISOString(),
+        last_inspection_date: now.toISOString(),
+        reason_for_rejection: rejectionText,
       };
 
-      // Calculate next inspection date (e.g., 3 months from now for verified)
       if (inspectionResult === 'verified') {
         const nextDate = new Date();
         nextDate.setMonth(nextDate.getMonth() + 3);
@@ -117,6 +127,9 @@ export default function InspectionsScreen() {
     const sc = statusColors[item.actual_status] || statusColors.pending;
     const eq = getEquipmentTypeConfig(item.equipment_type);
     const isOverdue = item.next_inspection_date && new Date(item.next_inspection_date) < new Date();
+    const lastInspected = item.last_inspection_date
+      ? new Date(item.last_inspection_date).toLocaleDateString()
+      : null;
 
     return (
       <GlassCard style={styles.card} padding={14} onPress={() => openInspection(item)}>
@@ -127,7 +140,18 @@ export default function InspectionsScreen() {
           <View style={styles.info}>
             <Text style={styles.plate}>{item.plate_number}</Text>
             <Text style={styles.type}>{eq.label} ({item.equipment_category})</Text>
-            {item.driver_name && <Text style={styles.driver}>{item.driver_name}</Text>}
+            {item.driver_name && (
+              <View style={styles.driverRow}>
+                <MaterialCommunityIcons name="account" size={12} color={colors.textMuted} />
+                <Text style={styles.driver}>{item.driver_name}</Text>
+              </View>
+            )}
+            {lastInspected && (
+              <View style={styles.driverRow}>
+                <MaterialCommunityIcons name="calendar-check" size={12} color={colors.textMuted} />
+                <Text style={styles.driver}>Last: {lastInspected}</Text>
+              </View>
+            )}
           </View>
           <View>
             <View style={[styles.badge, { backgroundColor: sc.bg }]}>
@@ -154,37 +178,49 @@ export default function InspectionsScreen() {
     );
   };
 
-  if (loading) return <View style={styles.loading}><ActivityIndicator size="large" color={colors.primary} /></View>;
+  if (loading) {
+    return (
+      <GlassBackground>
+        <View style={styles.loading}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </GlassBackground>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+    <GlassBackground>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <View style={styles.header}>
         <Text style={styles.title}>Inspections</Text>
         <Text style={styles.subtitle}>{filteredVehicles.length} vehicles</Text>
       </View>
 
-      <Searchbar
-        placeholder="Search plate, driver, company..."
-        onChangeText={setSearchQuery}
-        value={searchQuery}
-        style={styles.search}
-        iconColor={colors.textMuted}
-        inputStyle={{ color: colors.textPrimary }}
-        placeholderTextColor={colors.textMuted}
-      />
+      <View style={styles.searchContainer}>
+        <Searchbar
+          placeholder="Search plate, driver, company..."
+          onChangeText={setSearchQuery}
+          value={searchQuery}
+          style={styles.search}
+          iconColor={colors.textMuted}
+          inputStyle={{ color: colors.textPrimary }}
+          placeholderTextColor={colors.textMuted}
+        />
+      </View>
 
-      <SegmentedButtons
-        value={statusFilter}
-        onValueChange={setStatusFilter}
-        buttons={[
-          { value: 'all', label: 'All' },
-          { value: 'pending', label: 'Pending' },
-          { value: 'verified', label: 'Verified' },
-          { value: 'rejected', label: 'Rejected' },
-        ]}
-        style={styles.filters}
-      />
+      <View style={styles.filterContainer}>
+        <SegmentedButtons
+          value={statusFilter}
+          onValueChange={setStatusFilter}
+          buttons={[
+            { value: 'all', label: 'All' },
+            { value: 'pending', label: 'Pending' },
+            { value: 'verified', label: 'Verified' },
+            { value: 'rejected', label: 'Rejected' },
+          ]}
+          style={styles.filters}
+        />
+      </View>
 
       <FlatList
         data={filteredVehicles}
@@ -210,7 +246,18 @@ export default function InspectionsScreen() {
                 <GlassCard style={{ marginBottom: 16 }} padding={12}>
                   <Text style={styles.vehicleTitle}>{selectedVehicle.plate_number}</Text>
                   <Text style={styles.vehicleSub}>{getEquipmentTypeConfig(selectedVehicle.equipment_type).label}</Text>
-                  {selectedVehicle.driver_name && <Text style={styles.vehicleSub}>Driver: {selectedVehicle.driver_name}</Text>}
+                  {selectedVehicle.driver_name && (
+                    <View style={styles.detailRow}>
+                      <MaterialCommunityIcons name="account" size={14} color={colors.textMuted} />
+                      <Text style={styles.vehicleSub}>Driver: {selectedVehicle.driver_name}</Text>
+                    </View>
+                  )}
+                  {selectedVehicle.client_company && (
+                    <View style={styles.detailRow}>
+                      <MaterialCommunityIcons name="domain" size={14} color={colors.textMuted} />
+                      <Text style={styles.vehicleSub}>Company: {selectedVehicle.client_company}</Text>
+                    </View>
+                  )}
                 </GlassCard>
               )}
 
@@ -237,12 +284,13 @@ export default function InspectionsScreen() {
                     }
                   >
                     <ScrollView style={{ maxHeight: 250 }}>
-                      {REJECTION_REASONS.map((r) => (
-                        <Menu.Item key={r.value} onPress={() => { setSelectedReason(r.label); setReasonMenu(false); }} title={r.label} />
-                      ))}
-                      {rejectionReasons.map((r) => (
-                        <Menu.Item key={r.id} onPress={() => { setSelectedReason(r.reason_text); setReasonMenu(false); }} title={r.reason_text} />
-                      ))}
+                      {rejectionReasons.length > 0 ? (
+                        rejectionReasons.map((r) => (
+                          <Menu.Item key={r.id} onPress={() => { setSelectedReason(r.reason_text); setReasonMenu(false); }} title={r.reason_text} />
+                        ))
+                      ) : (
+                        <Menu.Item title="No rejection reasons available" disabled />
+                      )}
                     </ScrollView>
                   </Menu>
                 </>
@@ -256,7 +304,7 @@ export default function InspectionsScreen() {
                 multiline
                 numberOfLines={3}
                 style={styles.input}
-                outlineColor={colors.cardBorder}
+                outlineColor={colors.inputBorder}
                 activeOutlineColor={colors.primary}
                 textColor={colors.textPrimary}
               />
@@ -270,18 +318,24 @@ export default function InspectionsScreen() {
           </Dialog.Actions>
         </Dialog>
       </Portal>
-    </View>
+    </GlassBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  loading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+  loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { paddingTop: 50, paddingHorizontal: 16, paddingBottom: 8 },
-  title: { color: colors.textPrimary, fontSize: 24, fontWeight: 'bold' },
+  title: { color: colors.textPrimary, fontSize: 26, fontWeight: 'bold' },
   subtitle: { color: colors.textMuted, fontSize: 13 },
-  search: { marginHorizontal: 16, marginBottom: 10, backgroundColor: colors.card, borderRadius: 12 },
-  filters: { marginHorizontal: 16, marginBottom: 10 },
+  searchContainer: { paddingHorizontal: 16, marginBottom: 10 },
+  search: {
+    backgroundColor: glass.background.card,
+    borderRadius: glass.border.radius.md,
+    borderWidth: 1,
+    borderColor: glass.border.color,
+  },
+  filterContainer: { paddingHorizontal: 16, marginBottom: 10 },
+  filters: {},
   list: { padding: 8, paddingBottom: 100 },
   card: { marginHorizontal: 8, marginVertical: 4 },
   row: { flexDirection: 'row', alignItems: 'center' },
@@ -289,19 +343,21 @@ const styles = StyleSheet.create({
   info: { flex: 1 },
   plate: { color: colors.textPrimary, fontWeight: '700', fontSize: 15 },
   type: { color: colors.textSecondary, fontSize: 12 },
-  driver: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
+  driverRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  driver: { color: colors.textMuted, fontSize: 11 },
   badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, gap: 4 },
   badgeText: { fontSize: 10, fontWeight: '600' },
-  rejectRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.cardBorder, gap: 6 },
+  rejectRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: glass.border.color, gap: 6 },
   rejectText: { color: colors.error, fontSize: 12, flex: 1 },
   empty: { alignItems: 'center', margin: 16 },
   emptyText: { color: colors.textMuted, marginTop: 12 },
-  dialog: { backgroundColor: colors.card },
+  dialog: { backgroundColor: colors.cardSolid, borderRadius: glass.border.radius.lg },
   dialogTitle: { color: colors.textPrimary },
   vehicleTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: 'bold' },
   vehicleSub: { color: colors.textSecondary, fontSize: 13 },
+  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
   label: { color: colors.textPrimary, fontSize: 14, fontWeight: '600', marginTop: 12, marginBottom: 8 },
   radioRow: { backgroundColor: colors.surfaceLight, borderRadius: 8, marginBottom: 4 },
-  menuButton: { marginBottom: 8, borderColor: colors.cardBorder },
+  menuButton: { marginBottom: 8, borderColor: colors.inputBorder },
   input: { backgroundColor: colors.inputBackground },
 });

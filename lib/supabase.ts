@@ -1,49 +1,76 @@
 import 'react-native-url-polyfill/auto';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
-import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-// Supabase configuration
-// Replace these with your actual Supabase project credentials
-const SUPABASE_URL = 'https://uilphshemrrzeuyxzjml.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVpbHBoc2hlbXJyemV1eXh6am1sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk4NTU0NzUsImV4cCI6MjA4NTQzMTQ3NX0.rDx7Hv1CwEZ6GvAFZvIEYi-2YICWpOIYxTF99jzIOUA';
+// Supabase configuration - Use environment variables in production
+// Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in your .env file
+// Or configure in app.json under "extra" for Expo
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://uilphshemrrzeuyxzjml.supabase.co';
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVpbHBoc2hlbXJyemV1eXh6am1sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk4NTU0NzUsImV4cCI6MjA4NTQzMTQ3NX0.rDx7Hv1CwEZ6GvAFZvIEYi-2YICWpOIYxTF99jzIOUA';
 
-// Custom storage adapter that uses SecureStore on native and AsyncStorage on web
-const ExpoSecureStoreAdapter = {
+// Validate configuration
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  throw new Error('Missing Supabase configuration. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY environment variables.');
+}
+
+// Check if we're running on server (SSR) or client
+const isServer = typeof window === 'undefined';
+
+// Custom storage adapter that handles web, native, and SSR
+const StorageAdapter = {
   getItem: async (key: string): Promise<string | null> => {
+    // Server-side: no storage available
+    if (isServer) return null;
+
     if (Platform.OS === 'web') {
-      return AsyncStorage.getItem(key);
+      // Web client: use localStorage
+      try {
+        return localStorage.getItem(key);
+      } catch {
+        return null;
+      }
     }
+    // Native: use SecureStore
+    const SecureStore = require('expo-secure-store');
     return SecureStore.getItemAsync(key);
   },
   setItem: async (key: string, value: string): Promise<void> => {
+    if (isServer) return;
+
     if (Platform.OS === 'web') {
-      await AsyncStorage.setItem(key, value);
+      try {
+        localStorage.setItem(key, value);
+      } catch {}
       return;
     }
+    const SecureStore = require('expo-secure-store');
     await SecureStore.setItemAsync(key, value);
   },
   removeItem: async (key: string): Promise<void> => {
+    if (isServer) return;
+
     if (Platform.OS === 'web') {
-      await AsyncStorage.removeItem(key);
+      try {
+        localStorage.removeItem(key);
+      } catch {}
       return;
     }
+    const SecureStore = require('expo-secure-store');
     await SecureStore.deleteItemAsync(key);
   },
 };
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
-    storage: ExpoSecureStoreAdapter,
+    storage: StorageAdapter,
     autoRefreshToken: true,
-    persistSession: true,
+    persistSession: !isServer,
     detectSessionInUrl: false,
   },
 });
 
 // Database types - Based on NEOM Active Vehicles Excel
-export type UserRole = 'owner' | 'admin' | 'inspector';
+export type UserRole = 'owner' | 'admin' | 'inspector' | 'contractor';
 
 // Status types matching Excel columns
 export type VehicleStatus = 'verified' | 'rejected' | 'pending';
@@ -79,11 +106,6 @@ export type EquipmentType =
   | 'ambulance'
   | 'other';
 
-export type CertificateStatus = 'valid' | 'expired' | 'revoked' | 'pending';
-export type ContractType = 'employment' | 'freelance' | 'ajir' | 'service' | 'rental';
-export type ContractStatus = 'draft' | 'active' | 'expired' | 'terminated' | 'pending_renewal';
-export type StickerStatus = 'issued' | 'expired' | 'revoked' | 'lost';
-export type WorkerStatus = 'active' | 'inactive' | 'suspended' | 'terminated';
 
 // Rejection reason categories from Excel
 export type RejectionCategory = 'freelance' | 'old_model' | 'safety' | 'documentation' | 'mechanical';
@@ -295,111 +317,6 @@ export const REJECTION_CATEGORIES: { value: RejectionCategory; label: string; ic
   { value: 'mechanical', label: 'Mechanical', icon: 'wrench', color: '#6B7280' },
 ];
 
-// Certificate interface
-export interface Certificate {
-  id: string;
-  company_id: string;
-  certificate_number: string;
-  issued_to: string;
-  inspection_id: string | null;
-  issue_date: string;
-  expiry_date: string;
-  status: CertificateStatus;
-  qr_code: string | null;
-  pdf_url: string | null;
-  notes: string | null;
-  created_at: string;
-  issued_by: string | null;
-}
-
-// Company Sticker interface
-export interface CompanySticker {
-  id: string;
-  company_id: string;
-  sticker_number: string;
-  vehicle_equipment_id: string | null;
-  certificate_id: string | null;
-  issue_date: string;
-  expiry_date: string;
-  status: StickerStatus;
-  color: string | null;
-  notes: string | null;
-  created_at: string;
-  issued_by: string | null;
-}
-
-// Contract interface
-export interface Contract {
-  id: string;
-  company_id: string;
-  contract_number: string;
-  contract_type: ContractType;
-  title: string;
-  description: string | null;
-  party_name: string;
-  party_email: string | null;
-  party_phone: string | null;
-  party_id_number: string | null;
-  start_date: string;
-  end_date: string | null;
-  contract_value: number | null;
-  currency: string;
-  payment_terms: string | null;
-  status: ContractStatus;
-  document_url: string | null;
-  notes: string | null;
-  created_at: string;
-  created_by: string | null;
-  approved_by: string | null;
-  approved_at: string | null;
-}
-
-// Ajir Worker interface (Saudi Labor System)
-export interface AjirWorker {
-  id: string;
-  company_id: string;
-  contract_id: string | null;
-  full_name: string;
-  nationality: string | null;
-  id_number: string;
-  id_expiry_date: string | null;
-  passport_number: string | null;
-  passport_expiry_date: string | null;
-  phone: string | null;
-  email: string | null;
-  address: string | null;
-  job_title: string | null;
-  department: string | null;
-  hire_date: string | null;
-  ajir_number: string | null;
-  work_permit_number: string | null;
-  work_permit_expiry: string | null;
-  sponsor_transfer_date: string | null;
-  status: WorkerStatus;
-  notes: string | null;
-  created_at: string;
-  created_by: string | null;
-}
-
-// Freelance Inspector interface
-export interface FreelanceInspector {
-  id: string;
-  user_id: string;
-  contract_id: string | null;
-  license_number: string | null;
-  license_expiry: string | null;
-  certifications: string[] | null;
-  specializations: string[] | null;
-  is_available: boolean;
-  hourly_rate: number | null;
-  currency: string;
-  total_inspections: number;
-  rating: number | null;
-  status: WorkerStatus;
-  notes: string | null;
-  created_at: string;
-  user?: User;
-}
 
 // Helper to get rejection category config
 export function getRejectionCategoryConfig(category: RejectionCategory) {

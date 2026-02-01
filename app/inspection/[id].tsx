@@ -1,25 +1,25 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert, StatusBar } from 'react-native';
 import { Text, Button, ActivityIndicator, RadioButton, Menu } from 'react-native-paper';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { supabase, VehicleEquipment, RejectionReason, getEquipmentTypeConfig, REJECTION_REASONS } from '../../lib/supabase';
-import { useAuth, useIsAdmin } from '../../lib/auth';
-import { colors, statusColors } from '../../lib/theme';
+import { supabase, VehicleEquipment, RejectionReason, getEquipmentTypeConfig } from '../../lib/supabase';
+import { useAuth, useIsContractor } from '../../lib/auth';
+import { colors, statusColors, glass } from '../../lib/theme';
 import GlassCard from '../../components/GlassCard';
+import GlassBackground from '../../components/GlassBackground';
 
 export default function VehicleDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
-  const isAdmin = useIsAdmin();
+  const { isContractor } = useIsContractor();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [vehicle, setVehicle] = useState<VehicleEquipment | null>(null);
   const [rejectionReasons, setRejectionReasons] = useState<RejectionReason[]>([]);
 
-  // Inspection form
   const [inspectionResult, setInspectionResult] = useState<'verified' | 'rejected'>('verified');
   const [selectedReason, setSelectedReason] = useState('');
   const [reasonMenu, setReasonMenu] = useState(false);
@@ -57,11 +57,11 @@ export default function VehicleDetailScreen() {
 
     setSaving(true);
     try {
-      const updateData: any = {
+      const now = new Date();
+      const updateData: Partial<VehicleEquipment> = {
         actual_status: inspectionResult,
-        last_inspection_date: new Date().toISOString(),
+        last_inspection_date: now.toISOString(),
         reason_for_rejection: inspectionResult === 'rejected' ? selectedReason : null,
-        modified_at: new Date().toISOString(),
       };
 
       if (inspectionResult === 'verified') {
@@ -87,17 +87,21 @@ export default function VehicleDetailScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
+      <GlassBackground>
+        <View style={styles.loading}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </GlassBackground>
     );
   }
 
   if (!vehicle) {
     return (
-      <View style={styles.loading}>
-        <Text style={{ color: colors.textMuted }}>Vehicle not found</Text>
-      </View>
+      <GlassBackground>
+        <View style={styles.loading}>
+          <Text style={{ color: colors.textMuted }}>Vehicle not found</Text>
+        </View>
+      </GlassBackground>
     );
   }
 
@@ -106,18 +110,20 @@ export default function VehicleDetailScreen() {
   const isOverdue = vehicle.next_inspection_date && new Date(vehicle.next_inspection_date) < new Date();
 
   return (
-    <>
+    <GlassBackground>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <Stack.Screen
         options={{
           title: 'Vehicle Details',
           headerShown: true,
-          headerStyle: { backgroundColor: colors.card },
+          headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.textPrimary,
+          headerTransparent: true,
         }}
       />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {/* Vehicle Info Card */}
-        <GlassCard style={styles.card} padding={20}>
+        <GlassCard elevated style={styles.card} padding={20}>
           <View style={styles.headerRow}>
             <View style={[styles.iconLarge, { backgroundColor: `${colors.primary}15` }]}>
               <MaterialCommunityIcons name={eq.icon} size={40} color={colors.primary} />
@@ -138,26 +144,51 @@ export default function VehicleDetailScreen() {
 
           <View style={styles.infoGrid}>
             <View style={styles.infoItem}>
-              <Text style={styles.infoLabel}>Driver</Text>
+              <View style={styles.infoRow}>
+                <MaterialCommunityIcons name="account" size={16} color={colors.primary} />
+                <Text style={styles.infoLabel}>Driver</Text>
+              </View>
               <Text style={styles.infoValue}>{vehicle.driver_name || 'N/A'}</Text>
             </View>
             <View style={styles.infoItem}>
-              <Text style={styles.infoLabel}>National ID</Text>
+              <View style={styles.infoRow}>
+                <MaterialCommunityIcons name="card-account-details" size={16} color={colors.primary} />
+                <Text style={styles.infoLabel}>National ID</Text>
+              </View>
               <Text style={styles.infoValue}>{vehicle.national_id_number || 'N/A'}</Text>
             </View>
             <View style={styles.infoItem}>
-              <Text style={styles.infoLabel}>Year</Text>
+              <View style={styles.infoRow}>
+                <MaterialCommunityIcons name="calendar" size={16} color={colors.primary} />
+                <Text style={styles.infoLabel}>Year</Text>
+              </View>
               <Text style={styles.infoValue}>{vehicle.year_of_manufacture || 'N/A'}</Text>
             </View>
             <View style={styles.infoItem}>
-              <Text style={styles.infoLabel}>Company</Text>
+              <View style={styles.infoRow}>
+                <MaterialCommunityIcons name="domain" size={16} color={colors.primary} />
+                <Text style={styles.infoLabel}>Company</Text>
+              </View>
               <Text style={styles.infoValue} numberOfLines={2}>{vehicle.client_company || 'N/A'}</Text>
             </View>
           </View>
 
+          {vehicle.last_inspection_date && (
+            <View style={styles.inspectionInfo}>
+              <MaterialCommunityIcons name="clipboard-check" size={16} color={colors.textMuted} />
+              <Text style={styles.inspectionText}>
+                Last inspected: {new Date(vehicle.last_inspection_date).toLocaleDateString()}
+              </Text>
+            </View>
+          )}
+
           {vehicle.next_inspection_date && (
             <View style={[styles.dateRow, isOverdue && styles.overdueRow]}>
-              <MaterialCommunityIcons name={isOverdue ? 'calendar-alert' : 'calendar-check'} size={18} color={isOverdue ? colors.error : colors.success} />
+              <MaterialCommunityIcons
+                name={isOverdue ? 'calendar-alert' : 'calendar-check'}
+                size={18}
+                color={isOverdue ? colors.error : colors.success}
+              />
               <Text style={[styles.dateText, isOverdue && { color: colors.error }]}>
                 Next Inspection: {new Date(vehicle.next_inspection_date).toLocaleDateString()}
                 {isOverdue && ' (OVERDUE)'}
@@ -166,94 +197,173 @@ export default function VehicleDetailScreen() {
           )}
 
           {vehicle.actual_status === 'rejected' && vehicle.reason_for_rejection && (
-            <View style={styles.rejectBox}>
-              <MaterialCommunityIcons name="alert-circle" size={18} color={colors.error} />
-              <Text style={styles.rejectReason}>{vehicle.reason_for_rejection}</Text>
-            </View>
+            <GlassCard variant="error" style={styles.rejectBox} padding={12}>
+              <View style={styles.rejectRow}>
+                <MaterialCommunityIcons name="alert-circle" size={18} color={colors.error} />
+                <Text style={styles.rejectReason}>{vehicle.reason_for_rejection}</Text>
+              </View>
+            </GlassCard>
           )}
         </GlassCard>
 
-        {/* Inspection Form */}
-        <GlassCard style={styles.card} padding={20}>
-          <Text style={styles.sectionTitle}>Record Inspection</Text>
+        {/* Inspection Form - Only show for non-contractors */}
+        {!isContractor && (
+          <GlassCard style={styles.card} padding={20}>
+            <Text style={styles.sectionTitle}>Record Inspection</Text>
 
-          <Text style={styles.label}>Result</Text>
-          <RadioButton.Group onValueChange={(v) => setInspectionResult(v as 'verified' | 'rejected')} value={inspectionResult}>
-            <View style={styles.radioOption}>
-              <RadioButton.Item label="Verified (Pass)" value="verified" labelStyle={{ color: colors.success }} color={colors.success} />
+            <Text style={styles.label}>Result</Text>
+            <RadioButton.Group onValueChange={(v) => setInspectionResult(v as 'verified' | 'rejected')} value={inspectionResult}>
+              <View style={styles.radioOption}>
+                <RadioButton.Item
+                  label="Verified (Pass)"
+                  value="verified"
+                  labelStyle={{ color: colors.success }}
+                  color={colors.success}
+                />
+              </View>
+              <View style={styles.radioOption}>
+                <RadioButton.Item
+                  label="Rejected (Fail)"
+                  value="rejected"
+                  labelStyle={{ color: colors.error }}
+                  color={colors.error}
+                />
+              </View>
+            </RadioButton.Group>
+
+            {inspectionResult === 'rejected' && (
+              <>
+                <Text style={styles.label}>Rejection Reason *</Text>
+                <Menu
+                  visible={reasonMenu}
+                  onDismiss={() => setReasonMenu(false)}
+                  anchor={
+                    <Button
+                      mode="outlined"
+                      onPress={() => setReasonMenu(true)}
+                      style={styles.menuButton}
+                      textColor={colors.textPrimary}
+                    >
+                      {selectedReason || 'Select reason...'}
+                    </Button>
+                  }
+                >
+                  <ScrollView style={{ maxHeight: 300 }}>
+                    {rejectionReasons.length > 0 ? (
+                      rejectionReasons.map((r) => (
+                        <Menu.Item
+                          key={r.id}
+                          onPress={() => { setSelectedReason(r.reason_text); setReasonMenu(false); }}
+                          title={r.reason_text}
+                        />
+                      ))
+                    ) : (
+                      <Menu.Item title="No rejection reasons available" disabled />
+                    )}
+                  </ScrollView>
+                </Menu>
+              </>
+            )}
+
+            <Button
+              mode="contained"
+              onPress={submitInspection}
+              loading={saving}
+              disabled={saving}
+              style={styles.submitButton}
+              buttonColor={inspectionResult === 'verified' ? colors.success : colors.error}
+            >
+              {inspectionResult === 'verified' ? 'Verify Vehicle' : 'Reject Vehicle'}
+            </Button>
+          </GlassCard>
+        )}
+
+        {/* Contractor view-only message */}
+        {isContractor && (
+          <GlassCard variant="accent" style={styles.card} padding={16}>
+            <View style={styles.contractorNote}>
+              <MaterialCommunityIcons name="information" size={20} color={colors.accent} />
+              <Text style={styles.contractorText}>
+                You are viewing as a contractor. Inspection actions are not available.
+              </Text>
             </View>
-            <View style={styles.radioOption}>
-              <RadioButton.Item label="Rejected (Fail)" value="rejected" labelStyle={{ color: colors.error }} color={colors.error} />
-            </View>
-          </RadioButton.Group>
-
-          {inspectionResult === 'rejected' && (
-            <>
-              <Text style={styles.label}>Rejection Reason *</Text>
-              <Menu
-                visible={reasonMenu}
-                onDismiss={() => setReasonMenu(false)}
-                anchor={
-                  <Button mode="outlined" onPress={() => setReasonMenu(true)} style={styles.menuButton} textColor={colors.textPrimary}>
-                    {selectedReason || 'Select reason...'}
-                  </Button>
-                }
-              >
-                <ScrollView style={{ maxHeight: 300 }}>
-                  {REJECTION_REASONS.map((r) => (
-                    <Menu.Item key={r.value} onPress={() => { setSelectedReason(r.label); setReasonMenu(false); }} title={r.label} />
-                  ))}
-                  {rejectionReasons.map((r) => (
-                    <Menu.Item key={r.id} onPress={() => { setSelectedReason(r.reason_text); setReasonMenu(false); }} title={r.reason_text} />
-                  ))}
-                </ScrollView>
-              </Menu>
-            </>
-          )}
-
-          <Button
-            mode="contained"
-            onPress={submitInspection}
-            loading={saving}
-            disabled={saving}
-            style={styles.submitButton}
-            buttonColor={inspectionResult === 'verified' ? colors.success : colors.error}
-          >
-            {inspectionResult === 'verified' ? 'Verify Vehicle' : 'Reject Vehicle'}
-          </Button>
-        </GlassCard>
+          </GlassCard>
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
-    </>
+    </GlassBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 16 },
-  loading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+  container: { flex: 1 },
+  content: { padding: 16, paddingTop: 100 },
+  loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   card: { marginBottom: 16 },
   headerRow: { flexDirection: 'row', alignItems: 'center' },
-  iconLarge: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center' },
+  iconLarge: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
   headerInfo: { flex: 1, marginLeft: 16 },
-  plateNumber: { color: colors.textPrimary, fontSize: 22, fontWeight: 'bold' },
+  plateNumber: { color: colors.textPrimary, fontSize: 24, fontWeight: 'bold' },
   equipmentType: { color: colors.textSecondary, fontSize: 14, marginTop: 2 },
-  statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginTop: 8, alignSelf: 'flex-start', gap: 4 },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    gap: 4
+  },
   statusText: { fontSize: 12, fontWeight: '600' },
-  divider: { height: 1, backgroundColor: colors.cardBorder, marginVertical: 16 },
+  divider: { height: 1, backgroundColor: glass.border.color, marginVertical: 16 },
   infoGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  infoItem: { width: '50%', marginBottom: 12 },
+  infoItem: { width: '50%', marginBottom: 16 },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
   infoLabel: { color: colors.textMuted, fontSize: 12 },
-  infoValue: { color: colors.textPrimary, fontSize: 14, fontWeight: '500', marginTop: 2 },
-  dateRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: `${colors.success}15`, padding: 12, borderRadius: 8, marginTop: 8, gap: 8 },
+  infoValue: { color: colors.textPrimary, fontSize: 15, fontWeight: '500' },
+  inspectionInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: glass.border.color,
+  },
+  inspectionText: { color: colors.textMuted, fontSize: 13 },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: `${colors.success}15`,
+    padding: 12,
+    borderRadius: glass.border.radius.sm,
+    marginTop: 12,
+    gap: 8
+  },
   overdueRow: { backgroundColor: `${colors.error}15` },
   dateText: { color: colors.success, fontSize: 13, fontWeight: '500' },
-  rejectBox: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: `${colors.error}15`, padding: 12, borderRadius: 8, marginTop: 12, gap: 8 },
+  rejectBox: { marginTop: 12 },
+  rejectRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   rejectReason: { color: colors.error, fontSize: 13, flex: 1 },
   sectionTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '600', marginBottom: 16 },
   label: { color: colors.textPrimary, fontSize: 14, fontWeight: '500', marginTop: 12, marginBottom: 8 },
-  radioOption: { backgroundColor: colors.surfaceLight, borderRadius: 8, marginBottom: 4 },
-  menuButton: { borderColor: colors.cardBorder },
-  submitButton: { marginTop: 20 },
+  radioOption: {
+    backgroundColor: glass.background.card,
+    borderRadius: 8,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: glass.border.color,
+  },
+  menuButton: { borderColor: colors.inputBorder },
+  submitButton: { marginTop: 20, borderRadius: glass.border.radius.md },
+  contractorNote: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  contractorText: { color: colors.accent, fontSize: 14, flex: 1 },
 });

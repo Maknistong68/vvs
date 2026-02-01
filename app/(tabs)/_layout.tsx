@@ -1,26 +1,49 @@
 import { Tabs } from 'expo-router';
-import { useIsAdmin } from '../../lib/auth';
+import { useAuth, useIsAdmin, useIsContractor } from '../../lib/auth';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { colors } from '../../lib/theme';
-import { View } from 'react-native';
+import { colors, glass } from '../../lib/theme';
+import { View, Platform } from 'react-native';
 
 export default function TabsLayout() {
-  const isAdmin = useIsAdmin();
+  const { loading: authLoading } = useAuth();
+  const { isAdmin, loading: adminLoading } = useIsAdmin();
+  const { isContractor, loading: contractorLoading } = useIsContractor();
+
+  // Wait for all role checks to complete
+  const loading = authLoading || adminLoading || contractorLoading;
+
+  // Hide admin tab while loading OR if user is not admin
+  const showAdminTab = !loading && isAdmin;
+
+  // Hide inspect tab from contractors
+  const showInspectTab = !loading && !isContractor;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Tabs
         screenOptions={{
-          headerShown: false, // Hide header - screens have their own titles
+          headerShown: false,
           tabBarActiveTintColor: colors.primary,
           tabBarInactiveTintColor: colors.textMuted,
           tabBarStyle: {
-            backgroundColor: colors.card,
+            position: 'absolute',
+            backgroundColor: 'rgba(15, 23, 42, 0.9)',
             borderTopWidth: 1,
-            borderTopColor: colors.cardBorder,
-            paddingBottom: 8,
+            borderTopColor: glass.border.color,
+            paddingBottom: Platform.OS === 'ios' ? 24 : 8,
             paddingTop: 8,
-            height: 65,
+            height: Platform.OS === 'ios' ? 85 : 65,
+            ...Platform.select({
+              ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: -4 },
+                shadowOpacity: 0.15,
+                shadowRadius: 8,
+              },
+              android: {
+                elevation: 8,
+              },
+            }),
           },
           tabBarLabelStyle: {
             fontSize: 11,
@@ -47,15 +70,7 @@ export default function TabsLayout() {
             tabBarIcon: ({ color, size }) => (
               <MaterialCommunityIcons name="clipboard-check" color={color} size={size} />
             ),
-          }}
-        />
-        <Tabs.Screen
-          name="certificates"
-          options={{
-            tabBarLabel: 'Certs',
-            tabBarIcon: ({ color, size }) => (
-              <MaterialCommunityIcons name="certificate" color={color} size={size} />
-            ),
+            href: showInspectTab ? undefined : null,
           }}
         />
         <Tabs.Screen
@@ -65,7 +80,7 @@ export default function TabsLayout() {
             tabBarIcon: ({ color, size }) => (
               <MaterialCommunityIcons name="cog" color={color} size={size} />
             ),
-            href: isAdmin ? undefined : null,
+            href: showAdminTab ? undefined : null,
           }}
         />
         <Tabs.Screen

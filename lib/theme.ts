@@ -1,6 +1,6 @@
 import { MD3DarkTheme } from 'react-native-paper';
 
-// Professional Dark Theme - Clean & Modern
+// Professional Dark Theme with Glassmorphism
 export const colors = {
   // Primary - Vibrant Blue
   primary: '#3B82F6',
@@ -11,6 +11,11 @@ export const colors = {
   secondary: '#14B8A6',
   secondaryLight: '#2DD4BF',
   secondaryDark: '#0D9488',
+
+  // Accent - Purple
+  accent: '#8B5CF6',
+  accentLight: '#A78BFA',
+  accentDark: '#7C3AED',
 
   // Status colors - Vibrant
   success: '#22C55E',
@@ -26,48 +31,66 @@ export const colors = {
   white: '#FFFFFF',
   black: '#000000',
 
-  // Backgrounds - True dark
-  background: '#111827', // Gray 900
-  backgroundLight: '#1F2937', // Gray 800
-  backgroundLighter: '#374151', // Gray 700
+  // Backgrounds - True dark for glass effect
+  background: '#0F172A', // Slate 900
+  backgroundLight: '#1E293B', // Slate 800
+  backgroundLighter: '#334155', // Slate 700
 
-  // Cards - Slightly lighter than background
-  card: '#1F2937',
-  cardBorder: '#374151',
-  cardElevated: '#263244',
+  // Cards - Glass effect bases
+  card: 'rgba(30, 41, 59, 0.7)', // Slate 800 with transparency
+  cardSolid: '#1E293B',
+  cardBorder: 'rgba(255, 255, 255, 0.1)',
+  cardElevated: 'rgba(51, 65, 85, 0.6)',
 
   // Surface
-  surface: '#1F2937',
-  surfaceLight: '#374151',
+  surface: '#1E293B',
+  surfaceLight: '#334155',
 
   // Text - High contrast
-  textPrimary: '#F9FAFB', // Gray 50
-  textSecondary: '#D1D5DB', // Gray 300
-  textMuted: '#9CA3AF', // Gray 400
+  textPrimary: '#F8FAFC', // Slate 50
+  textSecondary: '#CBD5E1', // Slate 300
+  textMuted: '#94A3B8', // Slate 400
 
   // Input
-  inputBackground: '#1F2937',
-  inputBorder: '#4B5563',
+  inputBackground: 'rgba(30, 41, 59, 0.8)',
+  inputBorder: 'rgba(148, 163, 184, 0.3)',
 };
 
-// Card styles
-export const glassStyles = {
-  card: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    borderRadius: 16,
+// Glassmorphism configuration
+export const glass = {
+  blur: {
+    light: 10,
+    medium: 20,
+    heavy: 40,
   },
-  cardElevated: {
-    backgroundColor: colors.cardElevated,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
+  background: {
+    primary: 'rgba(15, 23, 42, 0.75)',
+    card: 'rgba(30, 41, 59, 0.5)',
+    elevated: 'rgba(51, 65, 85, 0.6)',
+    overlay: 'rgba(0, 0, 0, 0.5)',
+  },
+  border: {
+    color: 'rgba(255, 255, 255, 0.1)',
+    colorLight: 'rgba(255, 255, 255, 0.15)',
+    width: 1,
+    radius: {
+      sm: 12,
+      md: 16,
+      lg: 20,
+      xl: 24,
+    },
+  },
+  shadow: {
+    color: 'rgba(0, 0, 0, 0.25)',
+    offset: { width: 0, height: 8 },
+    radius: 16,
     elevation: 8,
+  },
+  // Decorative orb colors for background
+  orbs: {
+    primary: 'rgba(59, 130, 246, 0.15)', // Blue
+    secondary: 'rgba(139, 92, 246, 0.15)', // Purple
+    accent: 'rgba(20, 184, 166, 0.12)', // Teal
   },
 };
 
@@ -75,10 +98,35 @@ export const glassStyles = {
 export const gradients = {
   primary: ['#3B82F6', '#2563EB', '#1D4ED8'],
   secondary: ['#14B8A6', '#0D9488', '#0F766E'],
+  accent: ['#8B5CF6', '#7C3AED', '#6D28D9'],
   success: ['#22C55E', '#16A34A', '#15803D'],
   warning: ['#F59E0B', '#D97706', '#B45309'],
   error: ['#EF4444', '#DC2626', '#B91C1C'],
-  dark: ['#111827', '#1F2937'],
+  dark: ['#0F172A', '#1E293B'],
+  glass: ['rgba(59, 130, 246, 0.1)', 'rgba(139, 92, 246, 0.1)'],
+  // Background gradient
+  background: ['#0F172A', '#1E293B'],
+};
+
+// Card styles with glass effect
+export const glassStyles = {
+  card: {
+    backgroundColor: glass.background.card,
+    borderWidth: glass.border.width,
+    borderColor: glass.border.color,
+    borderRadius: glass.border.radius.md,
+  },
+  cardElevated: {
+    backgroundColor: glass.background.elevated,
+    borderWidth: glass.border.width,
+    borderColor: glass.border.colorLight,
+    borderRadius: glass.border.radius.lg,
+    shadowColor: glass.shadow.color,
+    shadowOffset: glass.shadow.offset,
+    shadowOpacity: 1,
+    shadowRadius: glass.shadow.radius,
+    elevation: glass.shadow.elevation,
+  },
 };
 
 // Paper theme
@@ -174,4 +222,12 @@ export const categoryColors: Record<string, string> = {
   C: '#8B5CF6', // Special - Purple
 };
 
-export default { colors, glassStyles, gradients, paperTheme, statusColors, equipmentIcons, rejectionCategoryIcons, categoryColors };
+// Role colors
+export const roleColors: Record<string, string> = {
+  owner: '#F59E0B', // Warning/Gold
+  admin: '#3B82F6', // Primary/Blue
+  inspector: '#22C55E', // Success/Green
+  contractor: '#8B5CF6', // Accent/Purple
+};
+
+export default { colors, glass, glassStyles, gradients, paperTheme, statusColors, equipmentIcons, rejectionCategoryIcons, categoryColors, roleColors };

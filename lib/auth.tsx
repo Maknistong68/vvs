@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase, User, UserRole, Company } from './supabase';
+import { AUTH_TIMEOUT_MS } from './constants';
 
 interface AuthContextType {
   session: Session | null;
@@ -37,7 +38,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single();
 
       if (userError) {
-        console.error('Error fetching user profile:', userError);
+        // User profile fetch failed - likely new user or RLS issue
         return { user: null, company: null };
       }
 
@@ -56,8 +57,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user: userData as User,
         company: companyData as Company | null,
       };
-    } catch (err) {
-      console.error('Error in fetchUserProfile:', err);
+    } catch {
+      // Unexpected error fetching profile
       return { user: null, company: null };
     }
   }, []);
@@ -71,29 +72,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [session?.user?.id, fetchUserProfile]);
 
   useEffect(() => {
+    let isMounted = true;
+
+    // Timeout fallback in case getSession hangs
+    const timeout = setTimeout(() => {
+      if (isMounted) {
+        setLoading(false);
+      }
+    }, AUTH_TIMEOUT_MS);
+
     // Get initial session
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      clearTimeout(timeout);
+      if (!isMounted) return;
+
       setSession(session);
       if (session?.user?.id) {
         const { user: profile, company: userCompany } = await fetchUserProfile(session.user.id);
-        setUser(profile);
-        setCompany(userCompany);
+        if (isMounted) {
+          setUser(profile);
+          setCompany(userCompany);
+        }
       }
-      setLoading(false);
-    }).catch((err) => {
-      console.error('Error getting session:', err);
-      setLoading(false);
+      if (isMounted) setLoading(false);
+    }).catch(() => {
+      clearTimeout(timeout);
+      if (isMounted) setLoading(false);
     });
 
     // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!isMounted) return;
       setSession(session);
       if (session?.user?.id) {
         const { user: profile, company: userCompany } = await fetchUserProfile(session.user.id);
-        setUser(profile);
-        setCompany(userCompany);
+        if (isMounted) {
+          setUser(profile);
+          setCompany(userCompany);
+        }
       } else {
         setUser(null);
         setCompany(null);
@@ -101,7 +119,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
   }, [fetchUserProfile]);
 
   const signIn = async (email: string, password: string) => {
@@ -111,8 +133,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password,
       });
       return { error: error ? new Error(error.message) : null };
-    } catch (err: any) {
-      return { error: new Error(err.message || 'Sign in failed') };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Sign in failed';
+      return { error: new Error(message) };
     }
   };
 
@@ -151,8 +174,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       });
       return { error: error ? new Error(error.message) : null };
-    } catch (err: any) {
-      return { error: new Error(err.message || 'Sign up failed') };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Sign up failed';
+      return { error: new Error(message) };
     }
   };
 
@@ -188,18 +212,44 @@ export function useAuth() {
 
 // Role-based access helpers
 export function useIsOwner() {
+  const { role, loading } = useAuth();
+  return { isOwner: role === 'owner', loading };
+}
+
+export function useIsAdmin() {
+  const { role, loading } = useAuth();
+  return { isAdmin: role === 'admin' || role === 'owner', loading };
+}
+
+export function useIsInspector() {
+  const { role, loading } = useAuth();
+  return { isInspector: role === 'inspector', loading };
+}
+
+export function useIsContractor() {
+  const { role, loading } = useAuth();
+  return { isContractor: role === 'contractor', loading };
+}
+
+// Legacy boolean-only versions for backward compatibility
+export function useIsOwnerBool() {
   const { role } = useAuth();
   return role === 'owner';
 }
 
-export function useIsAdmin() {
+export function useIsAdminBool() {
   const { role } = useAuth();
   return role === 'admin' || role === 'owner';
 }
 
-export function useIsInspector() {
+export function useIsInspectorBool() {
   const { role } = useAuth();
   return role === 'inspector';
+}
+
+export function useIsContractorBool() {
+  const { role } = useAuth();
+  return role === 'contractor';
 }
 
 export function useCanManageUsers() {
