@@ -1,4 +1,4 @@
-import 'react-native-url-polyfill/dist/polyfill';
+import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
@@ -42,34 +42,105 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   },
 });
 
-// Database types
+// Database types - Based on NEOM Active Vehicles Excel
 export type UserRole = 'owner' | 'admin' | 'inspector';
-export type InspectionStatus = 'pending' | 'pass' | 'fail';
-export type VehicleType =
-  | 'car'
-  | 'truck'
-  | 'bus'
-  | 'van'
-  | 'motorcycle'
-  | 'trailer'
-  | 'heavy_equipment'
+
+// Status types matching Excel columns
+export type VehicleStatus = 'verified' | 'rejected' | 'pending';
+export type ExpectedStatus = 'verified' | 'inspection_overdue' | 'updated_inspection_required';
+export type EquipmentCategory = 'A' | 'B' | 'C';
+
+// Equipment types from Excel (25 types)
+export type EquipmentType =
   | 'forklift'
+  | 'backhoe'
+  | 'bulldozer'
+  | 'bus_minibus_coach'
+  | 'concrete_mixer_bulker'
+  | 'concrete_pump_truck'
+  | 'coring_drilling'
+  | 'crawler_crane'
+  | 'dump_truck_articulated'
+  | 'dyna_mini_truck'
+  | 'excavator_tracked'
+  | 'flatbed_trailer'
+  | 'grader'
+  | 'hiab_boom_truck'
+  | 'light_vehicle'
+  | 'mewp'
+  | 'mobile_crane_wheeled'
+  | 'roller_compactor'
+  | 'service_truck'
+  | 'sewage_truck'
+  | 'skid_steer_loader'
+  | 'tanker_truck'
+  | 'telehandler'
+  | 'wheeled_loader'
   | 'ambulance'
-  | 'fire_truck'
   | 'other';
 
-export const VEHICLE_TYPES: { value: VehicleType; label: string; icon: string }[] = [
-  { value: 'car', label: 'Car', icon: 'car' },
-  { value: 'truck', label: 'Truck', icon: 'truck' },
-  { value: 'bus', label: 'Bus', icon: 'bus' },
-  { value: 'van', label: 'Van', icon: 'van-utility' },
-  { value: 'motorcycle', label: 'Motorcycle', icon: 'motorbike' },
-  { value: 'trailer', label: 'Trailer', icon: 'truck-trailer' },
-  { value: 'heavy_equipment', label: 'Heavy Equipment', icon: 'bulldozer' },
-  { value: 'forklift', label: 'Forklift', icon: 'forklift' },
-  { value: 'ambulance', label: 'Ambulance', icon: 'ambulance' },
-  { value: 'fire_truck', label: 'Fire Truck', icon: 'fire-truck' },
-  { value: 'other', label: 'Other', icon: 'car-multiple' },
+export type CertificateStatus = 'valid' | 'expired' | 'revoked' | 'pending';
+export type ContractType = 'employment' | 'freelance' | 'ajir' | 'service' | 'rental';
+export type ContractStatus = 'draft' | 'active' | 'expired' | 'terminated' | 'pending_renewal';
+export type StickerStatus = 'issued' | 'expired' | 'revoked' | 'lost';
+export type WorkerStatus = 'active' | 'inactive' | 'suspended' | 'terminated';
+
+// Rejection reason categories from Excel
+export type RejectionCategory = 'freelance' | 'old_model' | 'safety' | 'documentation' | 'mechanical';
+
+// Equipment types config matching Excel exactly (25 types with A/B categories)
+export const EQUIPMENT_TYPES: { value: EquipmentType; label: string; icon: string; category: EquipmentCategory }[] = [
+  { value: 'forklift', label: 'Forklifts', icon: 'forklift', category: 'A' },
+  { value: 'backhoe', label: 'Backhoes', icon: 'excavator', category: 'A' },
+  { value: 'bulldozer', label: 'Bulldozer', icon: 'bulldozer', category: 'A' },
+  { value: 'bus_minibus_coach', label: 'Bus/Mini-Bus/Coach/Coaster', icon: 'bus', category: 'B' },
+  { value: 'concrete_mixer_bulker', label: 'Concrete Mixer/Bulker', icon: 'truck-delivery', category: 'B' },
+  { value: 'concrete_pump_truck', label: 'Concrete Pump Truck', icon: 'truck', category: 'B' },
+  { value: 'coring_drilling', label: 'Coring/Drilling', icon: 'hammer', category: 'A' },
+  { value: 'crawler_crane', label: 'Crawler Cranes', icon: 'crane', category: 'A' },
+  { value: 'dump_truck_articulated', label: 'Dump Truck (Articulated)', icon: 'dump-truck', category: 'A' },
+  { value: 'dyna_mini_truck', label: 'Dyna (Mini Truck)', icon: 'truck', category: 'A' },
+  { value: 'excavator_tracked', label: 'Excavator (360° Tracked)', icon: 'excavator', category: 'A' },
+  { value: 'flatbed_trailer', label: 'Flatbed Trailer', icon: 'truck-trailer', category: 'A' },
+  { value: 'grader', label: 'Graders', icon: 'road-variant', category: 'A' },
+  { value: 'hiab_boom_truck', label: 'HIAB (Boom Trucks)', icon: 'crane', category: 'A' },
+  { value: 'light_vehicle', label: 'Light Vehicle (Car/SUV/Pickup)', icon: 'car', category: 'B' },
+  { value: 'mewp', label: 'MEWPs', icon: 'elevator-up', category: 'A' },
+  { value: 'mobile_crane_wheeled', label: 'Mobile Cranes (Wheeled)', icon: 'crane', category: 'A' },
+  { value: 'roller_compactor', label: 'Roller Compactor', icon: 'road-variant', category: 'B' },
+  { value: 'service_truck', label: 'Service Truck (Mechanic/Food)', icon: 'truck', category: 'B' },
+  { value: 'sewage_truck', label: 'Sewage Truck', icon: 'tanker-truck', category: 'B' },
+  { value: 'skid_steer_loader', label: 'Skid Steer Loader (Bobcat)', icon: 'tractor-variant', category: 'A' },
+  { value: 'tanker_truck', label: 'Tanker Trucks (Water/Fuel)', icon: 'tanker-truck', category: 'A' },
+  { value: 'telehandler', label: 'Telehandler', icon: 'forklift', category: 'A' },
+  { value: 'wheeled_loader', label: 'Wheeled Loader', icon: 'tractor', category: 'A' },
+  { value: 'ambulance', label: 'Ambulance', icon: 'ambulance', category: 'B' },
+  { value: 'other', label: 'Other', icon: 'cog', category: 'A' },
+];
+
+// Common rejection reasons from Excel data
+export const REJECTION_REASONS: { value: string; label: string; category: RejectionCategory }[] = [
+  { value: 'freelance', label: 'Freelance - No proper employment', category: 'freelance' },
+  { value: 'old_model', label: 'Old Model - Vehicle too old', category: 'old_model' },
+  { value: 'no_360_camera', label: 'No 360 Vision/Camera', category: 'safety' },
+  { value: 'no_reverse_alarm', label: 'No Reverse Alarm', category: 'safety' },
+  { value: 'no_reverse_light', label: 'No Reverse Light', category: 'safety' },
+  { value: 'no_pwas', label: 'No PWAS (Proximity Warning System)', category: 'safety' },
+  { value: 'oil_leak', label: 'Oil/Hydraulic Leakage', category: 'mechanical' },
+  { value: 'tire_damage', label: 'Tires Damage', category: 'mechanical' },
+  { value: 'windshield_damage', label: 'Windshield Damage', category: 'mechanical' },
+  { value: 'insurance_expired', label: 'Insurance Expired', category: 'documentation' },
+  { value: 'tuv_expired', label: 'TUV Expired', category: 'documentation' },
+  { value: 'iqama_expired', label: 'Iqama Expired', category: 'documentation' },
+  { value: 'operator_tuv_expired', label: 'Operator TUV Expired', category: 'documentation' },
+  { value: 'no_iqama', label: 'No Iqama - Visa Holder Only', category: 'documentation' },
+  { value: 'pti_expired', label: 'PTI Expired', category: 'documentation' },
+  { value: 'license_not_relevant', label: 'License Not Relevant', category: 'documentation' },
+  { value: 'no_driving_license', label: 'No Driving License', category: 'documentation' },
+  { value: 'no_logo_sticker', label: 'No Logo/Sticker', category: 'safety' },
+  { value: 'no_lmi', label: 'No LMI (Load Moment Indicator)', category: 'safety' },
+  { value: 'no_movement_alarm', label: 'No Movement Alarm', category: 'safety' },
+  { value: 'unsafe_condition', label: 'Unsafe Condition', category: 'safety' },
 ];
 
 export interface Company {
@@ -91,70 +162,265 @@ export interface User {
   company_id: string | null;
   is_active: boolean;
   created_at: string;
-  // Joined
   company?: Company;
 }
 
-export interface Vehicle {
+export interface Project {
   id: string;
   company_id: string;
   name: string;
-  plate_number: string;
-  vehicle_type: VehicleType;
-  make: string | null;
-  model: string | null;
-  year: number | null;
-  vin: string | null;
-  notes: string | null;
+  code: string | null;
   is_active: boolean;
   created_at: string;
+}
+
+export interface Gate {
+  id: string;
+  company_id: string;
+  project_id: string | null;
+  name: string;
+  location: string | null;
+  is_active: boolean;
+  created_at: string;
+  project?: Project;
+}
+
+// Main Vehicle/Equipment interface - matches Excel columns
+export interface VehicleEquipment {
+  id: string;
+  company_id: string;
+  plate_number: string;
+  equipment_type: EquipmentType;
+  equipment_category: EquipmentCategory;
+  driver_name: string | null;
+  national_id_number: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  year_of_manufacture: number | null;
+  project_id: string | null;
+  gate_id: string | null;
+  actual_status: VehicleStatus;
+  expected_status: ExpectedStatus;
+  is_blacklisted: boolean;
+  last_inspection_date: string | null;
+  next_inspection_date: string | null;
+  reason_for_rejection: string | null;
+  owner_id: string | null;
+  client_company: string | null;
+  created_at: string;
   created_by: string | null;
+  modified_at: string | null;
   // Joined
+  project?: Project;
+  gate?: Gate;
+  owner?: User;
   company?: Company;
 }
 
-export interface FailureReason {
+export interface RejectionReason {
   id: string;
-  company_id: string;
+  company_id: string | null;
   reason_text: string;
-  category: string | null;
+  category: RejectionCategory | null;
   is_active: boolean;
   created_at: string;
-  created_by: string | null;
 }
 
 export interface Inspection {
   id: string;
   company_id: string;
-  vehicle_id: string;
+  vehicle_equipment_id: string;
   inspector_id: string;
-  scheduled_date: string;
-  status: InspectionStatus;
-  failure_reason_id: string | null;
-  odometer_reading: number | null;
+  inspection_date: string;
+  scheduled_date: string | null;
+  status: VehicleStatus;
+  reason_for_rejection: string | null;
+  passed_with_ndt: boolean;
+  gate_id: string | null;
   notes: string | null;
   completed_at: string | null;
   created_at: string;
-  // Joined fields
-  vehicle?: Vehicle;
+  // Joined
+  vehicle_equipment?: VehicleEquipment;
   inspector?: User;
-  failure_reason?: FailureReason;
+  gate?: Gate;
   company?: Company;
 }
 
-export interface InspectionStats {
+export interface DashboardStats {
   total: number;
+  verified: number;
+  rejected: number;
   pending: number;
-  pass: number;
-  fail: number;
+  overdue: number;
+  blacklisted: number;
 }
 
-export interface FailureReasonStat {
-  reason_text: string;
-  count: number;
+// Helper function to get equipment type config
+export function getEquipmentTypeConfig(type: EquipmentType) {
+  return EQUIPMENT_TYPES.find((t) => t.value === type) || EQUIPMENT_TYPES[EQUIPMENT_TYPES.length - 1];
 }
 
-// Helper function to get vehicle type config
-export function getVehicleTypeConfig(type: VehicleType) {
-  return VEHICLE_TYPES.find((t) => t.value === type) || VEHICLE_TYPES[VEHICLE_TYPES.length - 1];
+// Helper function to get equipment category display
+export function getCategoryDisplay(category: EquipmentCategory): string {
+  switch (category) {
+    case 'A': return 'Heavy Equipment';
+    case 'B': return 'Vehicles';
+    case 'C': return 'Special';
+    default: return 'Unknown';
+  }
+}
+
+// Helper to parse equipment type from Excel string like "Forklifts - (A)"
+export function parseEquipmentFromExcel(excelValue: string): { type: EquipmentType; category: EquipmentCategory } {
+  const match = excelValue.match(/^(.+?)\s*-\s*\(([ABC])\)$/);
+  if (!match) return { type: 'other', category: 'A' };
+
+  const label = match[1].trim().toLowerCase();
+  const category = match[2] as EquipmentCategory;
+
+  const found = EQUIPMENT_TYPES.find(t =>
+    t.label.toLowerCase().includes(label) || label.includes(t.label.toLowerCase().split(' ')[0])
+  );
+
+  return { type: found?.value || 'other', category };
+}
+
+// Rejection reason category config
+export const REJECTION_CATEGORIES: { value: RejectionCategory; label: string; icon: string; color: string }[] = [
+  { value: 'freelance', label: 'Freelance', icon: 'account-off', color: '#F59E0B' },
+  { value: 'old_model', label: 'Old Model', icon: 'car-clock', color: '#8B5CF6' },
+  { value: 'safety', label: 'Safety', icon: 'shield-alert', color: '#EF4444' },
+  { value: 'documentation', label: 'Documentation', icon: 'file-alert', color: '#3B82F6' },
+  { value: 'mechanical', label: 'Mechanical', icon: 'wrench', color: '#6B7280' },
+];
+
+// Certificate interface
+export interface Certificate {
+  id: string;
+  company_id: string;
+  certificate_number: string;
+  issued_to: string;
+  inspection_id: string | null;
+  issue_date: string;
+  expiry_date: string;
+  status: CertificateStatus;
+  qr_code: string | null;
+  pdf_url: string | null;
+  notes: string | null;
+  created_at: string;
+  issued_by: string | null;
+}
+
+// Company Sticker interface
+export interface CompanySticker {
+  id: string;
+  company_id: string;
+  sticker_number: string;
+  vehicle_equipment_id: string | null;
+  certificate_id: string | null;
+  issue_date: string;
+  expiry_date: string;
+  status: StickerStatus;
+  color: string | null;
+  notes: string | null;
+  created_at: string;
+  issued_by: string | null;
+}
+
+// Contract interface
+export interface Contract {
+  id: string;
+  company_id: string;
+  contract_number: string;
+  contract_type: ContractType;
+  title: string;
+  description: string | null;
+  party_name: string;
+  party_email: string | null;
+  party_phone: string | null;
+  party_id_number: string | null;
+  start_date: string;
+  end_date: string | null;
+  contract_value: number | null;
+  currency: string;
+  payment_terms: string | null;
+  status: ContractStatus;
+  document_url: string | null;
+  notes: string | null;
+  created_at: string;
+  created_by: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+}
+
+// Ajir Worker interface (Saudi Labor System)
+export interface AjirWorker {
+  id: string;
+  company_id: string;
+  contract_id: string | null;
+  full_name: string;
+  nationality: string | null;
+  id_number: string;
+  id_expiry_date: string | null;
+  passport_number: string | null;
+  passport_expiry_date: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  job_title: string | null;
+  department: string | null;
+  hire_date: string | null;
+  ajir_number: string | null;
+  work_permit_number: string | null;
+  work_permit_expiry: string | null;
+  sponsor_transfer_date: string | null;
+  status: WorkerStatus;
+  notes: string | null;
+  created_at: string;
+  created_by: string | null;
+}
+
+// Freelance Inspector interface
+export interface FreelanceInspector {
+  id: string;
+  user_id: string;
+  contract_id: string | null;
+  license_number: string | null;
+  license_expiry: string | null;
+  certifications: string[] | null;
+  specializations: string[] | null;
+  is_available: boolean;
+  hourly_rate: number | null;
+  currency: string;
+  total_inspections: number;
+  rating: number | null;
+  status: WorkerStatus;
+  notes: string | null;
+  created_at: string;
+  user?: User;
+}
+
+// Helper to get rejection category config
+export function getRejectionCategoryConfig(category: RejectionCategory) {
+  return REJECTION_CATEGORIES.find((c) => c.value === category) || REJECTION_CATEGORIES[REJECTION_CATEGORIES.length - 1];
+}
+
+// Status color helpers
+export function getStatusColor(status: VehicleStatus): string {
+  switch (status) {
+    case 'verified': return '#10B981';
+    case 'rejected': return '#EF4444';
+    case 'pending': return '#F59E0B';
+    default: return '#6B7280';
+  }
+}
+
+export function getExpectedStatusColor(status: ExpectedStatus): string {
+  switch (status) {
+    case 'verified': return '#10B981';
+    case 'inspection_overdue': return '#EF4444';
+    case 'updated_inspection_required': return '#F59E0B';
+    default: return '#6B7280';
+  }
 }

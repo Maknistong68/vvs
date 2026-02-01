@@ -28,24 +28,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const fetchUserProfile = useCallback(async (userId: string) => {
-    const { data, error } = await supabase
-      .from('users')
-      .select(`
-        *,
-        company:companies(*)
-      `)
-      .eq('id', userId)
-      .single();
+    try {
+      // First fetch user
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
 
-    if (error) {
-      console.error('Error fetching user profile:', error);
+      if (userError) {
+        console.error('Error fetching user profile:', userError);
+        return { user: null, company: null };
+      }
+
+      // Then fetch company if user has one
+      let companyData = null;
+      if (userData?.company_id) {
+        const { data: compData } = await supabase
+          .from('companies')
+          .select('*')
+          .eq('id', userData.company_id)
+          .single();
+        companyData = compData;
+      }
+
+      return {
+        user: userData as User,
+        company: companyData as Company | null,
+      };
+    } catch (err) {
+      console.error('Error in fetchUserProfile:', err);
       return { user: null, company: null };
     }
-
-    return {
-      user: data as User,
-      company: data.company as Company | null,
-    };
   }, []);
 
   const refreshUser = useCallback(async () => {
@@ -65,6 +79,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(profile);
         setCompany(userCompany);
       }
+      setLoading(false);
+    }).catch((err) => {
+      console.error('Error getting session:', err);
       setLoading(false);
     });
 
@@ -88,11 +105,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [fetchUserProfile]);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    return { error: error ? new Error(error.message) : null };
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      return { error: error ? new Error(error.message) : null };
+    } catch (err: any) {
+      return { error: new Error(err.message || 'Sign in failed') };
+    }
   };
 
   const signUp = async (
@@ -101,34 +122,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     fullName: string,
     companyCode?: string
   ) => {
-    // If company code provided, look up the company first
-    let companyId: string | null = null;
+    try {
+      // If company code provided, look up the company first
+      let companyId: string | null = null;
 
-    if (companyCode) {
-      const { data: companyData, error: companyError } = await supabase
-        .from('companies')
-        .select('id')
-        .eq('code', companyCode.toUpperCase())
-        .eq('is_active', true)
-        .single();
+      if (companyCode) {
+        const { data: companyData, error: companyError } = await supabase
+          .from('companies')
+          .select('id')
+          .eq('code', companyCode.toUpperCase())
+          .eq('is_active', true)
+          .single();
 
-      if (companyError || !companyData) {
-        return { error: new Error('Invalid company code. Please check and try again.') };
+        if (companyError || !companyData) {
+          return { error: new Error('Invalid company code. Please check and try again.') };
+        }
+        companyId = companyData.id;
       }
-      companyId = companyData.id;
-    }
 
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
-          company_id: companyId,
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+            company_id: companyId,
+          },
         },
-      },
-    });
-    return { error: error ? new Error(error.message) : null };
+      });
+      return { error: error ? new Error(error.message) : null };
+    } catch (err: any) {
+      return { error: new Error(err.message || 'Sign up failed') };
+    }
   };
 
   const signOut = async () => {

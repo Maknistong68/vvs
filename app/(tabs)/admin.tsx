@@ -1,110 +1,105 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  StyleSheet,
-  FlatList,
-  Alert,
-} from 'react-native';
-import {
-  Text,
-  FAB,
-  Card,
-  IconButton,
-  Dialog,
-  Portal,
-  TextInput,
-  Button,
-  Switch,
-  ActivityIndicator,
-  SegmentedButtons,
-  Chip,
-  Menu,
-} from 'react-native-paper';
+import { View, StyleSheet, FlatList, Alert, ScrollView, StatusBar } from 'react-native';
+import { Text, FAB, IconButton, Dialog, Portal, TextInput, Button, Switch, ActivityIndicator, Chip, Menu } from 'react-native-paper';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import {
   supabase,
-  Vehicle,
-  FailureReason,
+  VehicleEquipment,
+  RejectionReason,
   User,
   UserRole,
   Company,
-  VehicleType,
-  VEHICLE_TYPES,
-  getVehicleTypeConfig,
+  Project,
+  Gate,
+  EquipmentType,
+  EquipmentCategory,
+  VehicleStatus,
+  RejectionCategory,
+  EQUIPMENT_TYPES,
+  REJECTION_CATEGORIES,
+  REJECTION_REASONS,
+  getEquipmentTypeConfig,
+  getStatusColor,
 } from '../../lib/supabase';
-import { useAuth, useIsOwner, useCanManageVehicles, useCanManageFailureReasons } from '../../lib/auth';
+import { useAuth, useIsOwner } from '../../lib/auth';
+import { colors } from '../../lib/theme';
+import GlassCard from '../../components/GlassCard';
 
-type TabValue = 'vehicles' | 'reasons' | 'users' | 'companies';
+type TabValue = 'vehicles' | 'projects' | 'gates' | 'reasons' | 'users' | 'companies';
 
 export default function AdminScreen() {
   const { user, company } = useAuth();
   const isOwner = useIsOwner();
-  const canManageVehicles = useCanManageVehicles();
-  const canManageFailureReasons = useCanManageFailureReasons();
-
   const [activeTab, setActiveTab] = useState<TabValue>('vehicles');
   const [loading, setLoading] = useState(true);
-
-  // Data states
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [failureReasons, setFailureReasons] = useState<FailureReason[]>([]);
+  const [vehicles, setVehicles] = useState<VehicleEquipment[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [gates, setGates] = useState<Gate[]>([]);
+  const [rejectionReasons, setRejectionReasons] = useState<RejectionReason[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
 
-  // Dialog states
-  const [vehicleDialogVisible, setVehicleDialogVisible] = useState(false);
-  const [reasonDialogVisible, setReasonDialogVisible] = useState(false);
-  const [companyDialogVisible, setCompanyDialogVisible] = useState(false);
-  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
-  const [editingReason, setEditingReason] = useState<FailureReason | null>(null);
+  // Dialogs
+  const [vehicleDialog, setVehicleDialog] = useState(false);
+  const [projectDialog, setProjectDialog] = useState(false);
+  const [gateDialog, setGateDialog] = useState(false);
+  const [reasonDialog, setReasonDialog] = useState(false);
+  const [companyDialog, setCompanyDialog] = useState(false);
+  const [editingVehicle, setEditingVehicle] = useState<VehicleEquipment | null>(null);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [editingGate, setEditingGate] = useState<Gate | null>(null);
+  const [editingReason, setEditingReason] = useState<RejectionReason | null>(null);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
 
-  // Form states
-  const [vehicleForm, setVehicleForm] = useState({
-    name: '',
+  // Forms - Vehicle/Equipment (matches Excel)
+  const [vForm, setVForm] = useState({
     plate_number: '',
-    vehicle_type: 'car' as VehicleType,
-    make: '',
-    model: '',
-    year: '',
-    vin: '',
-    notes: '',
-  });
-  const [reasonForm, setReasonForm] = useState({ reason_text: '', category: '', is_active: true });
-  const [companyForm, setCompanyForm] = useState({
-    name: '',
-    code: '',
-    address: '',
-    contact_email: '',
-    contact_phone: '',
+    equipment_type: 'forklift' as EquipmentType,
+    equipment_category: 'A' as EquipmentCategory,
+    driver_name: '',
+    national_id_number: '',
+    year_of_manufacture: '',
+    client_company: '',
   });
 
-  // Menu states
-  const [vehicleTypeMenuVisible, setVehicleTypeMenuVisible] = useState(false);
+  // Project form
+  const [pForm, setPForm] = useState({ name: '', code: '' });
 
-  // Fetch all data
+  // Gate form
+  const [gForm, setGForm] = useState({ name: '', location: '', project_id: '' });
+
+  // Reason form
+  const [rForm, setRForm] = useState({ reason_text: '', category: 'safety' as RejectionCategory, is_active: true });
+
+  // Company form
+  const [cForm, setCForm] = useState({ name: '', code: '', contact_email: '' });
+
+  // Menus
+  const [eTypeMenu, setETypeMenu] = useState(false);
+  const [catMenu, setCatMenu] = useState(false);
+  const [projectMenu, setProjectMenu] = useState(false);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [vehiclesRes, reasonsRes, usersRes, companiesRes] = await Promise.all([
-        supabase.from('vehicles').select('*').order('name'),
-        supabase.from('failure_reasons').select('*').order('reason_text'),
+      const [v, p, g, r, u, c] = await Promise.all([
+        supabase.from('vehicles_equipment').select('*').order('plate_number'),
+        supabase.from('projects').select('*').order('name'),
+        supabase.from('gates').select('*, project:projects(*)').order('name'),
+        supabase.from('rejection_reasons').select('*').order('reason_text'),
         isOwner
           ? supabase.from('users').select('*, company:companies(*)').order('full_name')
-          : supabase
-              .from('users')
-              .select('*, company:companies(*)')
-              .eq('company_id', company?.id)
-              .order('full_name'),
+          : supabase.from('users').select('*, company:companies(*)').eq('company_id', company?.id).order('full_name'),
         isOwner ? supabase.from('companies').select('*').order('name') : Promise.resolve({ data: [] }),
       ]);
-
-      if (vehiclesRes.data) setVehicles(vehiclesRes.data);
-      if (reasonsRes.data) setFailureReasons(reasonsRes.data);
-      if (usersRes.data) setUsers(usersRes.data);
-      if (companiesRes.data) setCompanies(companiesRes.data);
-    } catch (error) {
-      console.error('Error fetching admin data:', error);
+      if (v.data) setVehicles(v.data);
+      if (p.data) setProjects(p.data);
+      if (g.data) setGates(g.data);
+      if (r.data) setRejectionReasons(r.data);
+      if (u.data) setUsers(u.data);
+      if (c.data) setCompanies(c.data);
+    } catch (err) {
+      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -114,655 +109,507 @@ export default function AdminScreen() {
     fetchData();
   }, [fetchData]);
 
-  // Vehicle CRUD
-  const openVehicleDialog = (vehicle?: Vehicle) => {
-    if (vehicle) {
-      setEditingVehicle(vehicle);
-      setVehicleForm({
-        name: vehicle.name,
-        plate_number: vehicle.plate_number,
-        vehicle_type: vehicle.vehicle_type,
-        make: vehicle.make || '',
-        model: vehicle.model || '',
-        year: vehicle.year?.toString() || '',
-        vin: vehicle.vin || '',
-        notes: vehicle.notes || '',
-      });
-    } else {
-      setEditingVehicle(null);
-      setVehicleForm({
-        name: '',
-        plate_number: '',
-        vehicle_type: 'car',
-        make: '',
-        model: '',
-        year: '',
-        vin: '',
-        notes: '',
-      });
-    }
-    setVehicleDialogVisible(true);
+  // Vehicle/Equipment CRUD
+  const openVehicle = (v?: VehicleEquipment) => {
+    setEditingVehicle(v || null);
+    setVForm(
+      v
+        ? {
+            plate_number: v.plate_number,
+            equipment_type: v.equipment_type,
+            equipment_category: v.equipment_category,
+            driver_name: v.driver_name || '',
+            national_id_number: v.national_id_number || '',
+            year_of_manufacture: v.year_of_manufacture?.toString() || '',
+            client_company: v.client_company || '',
+          }
+        : {
+            plate_number: '',
+            equipment_type: 'forklift',
+            equipment_category: 'A',
+            driver_name: '',
+            national_id_number: '',
+            year_of_manufacture: '',
+            client_company: '',
+          }
+    );
+    setVehicleDialog(true);
   };
 
   const saveVehicle = async () => {
-    if (!vehicleForm.name || !vehicleForm.plate_number) {
-      Alert.alert('Error', 'Please fill in required fields (Name and Plate Number)');
+    if (!vForm.plate_number) {
+      Alert.alert('Error', 'Plate number is required');
       return;
     }
-
-    try {
-      const vehicleData = {
-        name: vehicleForm.name,
-        plate_number: vehicleForm.plate_number,
-        vehicle_type: vehicleForm.vehicle_type,
-        make: vehicleForm.make || null,
-        model: vehicleForm.model || null,
-        year: vehicleForm.year ? parseInt(vehicleForm.year) : null,
-        vin: vehicleForm.vin || null,
-        notes: vehicleForm.notes || null,
-      };
-
-      if (editingVehicle) {
-        await supabase.from('vehicles').update(vehicleData).eq('id', editingVehicle.id);
-      } else {
-        await supabase.from('vehicles').insert({
-          ...vehicleData,
-          company_id: company!.id,
-          created_by: user!.id,
-        });
-      }
-      setVehicleDialogVisible(false);
-      fetchData();
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to save vehicle');
+    const data = {
+      plate_number: vForm.plate_number.toUpperCase(),
+      equipment_type: vForm.equipment_type,
+      equipment_category: vForm.equipment_category,
+      driver_name: vForm.driver_name || null,
+      national_id_number: vForm.national_id_number || null,
+      year_of_manufacture: vForm.year_of_manufacture ? parseInt(vForm.year_of_manufacture) : null,
+      client_company: vForm.client_company || null,
+    };
+    if (editingVehicle) {
+      await supabase.from('vehicles_equipment').update(data).eq('id', editingVehicle.id);
+    } else {
+      await supabase.from('vehicles_equipment').insert({
+        ...data,
+        company_id: company!.id,
+        created_by: user!.id,
+        actual_status: 'pending',
+        expected_status: 'verified',
+      });
     }
+    setVehicleDialog(false);
+    fetchData();
   };
 
-  const deleteVehicle = (id: string) => {
-    Alert.alert('Confirm Delete', 'Are you sure you want to delete this vehicle?', [
-      { text: 'Cancel', style: 'cancel' },
+  const deleteVehicle = (id: string) =>
+    Alert.alert('Delete?', 'This will permanently delete this vehicle/equipment', [
+      { text: 'Cancel' },
       {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
-          try {
-            await supabase.from('vehicles').delete().eq('id', id);
-            fetchData();
-          } catch (error: any) {
-            Alert.alert('Error', error.message || 'Failed to delete');
-          }
+          await supabase.from('vehicles_equipment').delete().eq('id', id);
+          fetchData();
         },
       },
     ]);
+
+  // Project CRUD
+  const openProject = (p?: Project) => {
+    setEditingProject(p || null);
+    setPForm(p ? { name: p.name, code: p.code || '' } : { name: '', code: '' });
+    setProjectDialog(true);
   };
 
-  // Failure Reason CRUD
-  const openReasonDialog = (reason?: FailureReason) => {
-    if (reason) {
-      setEditingReason(reason);
-      setReasonForm({
-        reason_text: reason.reason_text,
-        category: reason.category || '',
-        is_active: reason.is_active,
-      });
-    } else {
-      setEditingReason(null);
-      setReasonForm({ reason_text: '', category: '', is_active: true });
+  const saveProject = async () => {
+    if (!pForm.name) {
+      Alert.alert('Error', 'Project name is required');
+      return;
     }
-    setReasonDialogVisible(true);
+    const data = { name: pForm.name, code: pForm.code || null };
+    if (editingProject) {
+      await supabase.from('projects').update(data).eq('id', editingProject.id);
+    } else {
+      await supabase.from('projects').insert({ ...data, company_id: company!.id });
+    }
+    setProjectDialog(false);
+    fetchData();
+  };
+
+  const deleteProject = (id: string) =>
+    Alert.alert('Delete?', '', [
+      { text: 'Cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await supabase.from('projects').delete().eq('id', id);
+          fetchData();
+        },
+      },
+    ]);
+
+  // Gate CRUD
+  const openGate = (g?: Gate) => {
+    setEditingGate(g || null);
+    setGForm(g ? { name: g.name, location: g.location || '', project_id: g.project_id || '' } : { name: '', location: '', project_id: '' });
+    setGateDialog(true);
+  };
+
+  const saveGate = async () => {
+    if (!gForm.name) {
+      Alert.alert('Error', 'Gate name is required');
+      return;
+    }
+    const data = { name: gForm.name, location: gForm.location || null, project_id: gForm.project_id || null };
+    if (editingGate) {
+      await supabase.from('gates').update(data).eq('id', editingGate.id);
+    } else {
+      await supabase.from('gates').insert({ ...data, company_id: company!.id });
+    }
+    setGateDialog(false);
+    fetchData();
+  };
+
+  const deleteGate = (id: string) =>
+    Alert.alert('Delete?', '', [
+      { text: 'Cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await supabase.from('gates').delete().eq('id', id);
+          fetchData();
+        },
+      },
+    ]);
+
+  // Reason CRUD
+  const openReason = (r?: RejectionReason) => {
+    setEditingReason(r || null);
+    setRForm(r ? { reason_text: r.reason_text, category: (r.category as RejectionCategory) || 'safety', is_active: r.is_active } : { reason_text: '', category: 'safety', is_active: true });
+    setReasonDialog(true);
   };
 
   const saveReason = async () => {
-    if (!reasonForm.reason_text) {
-      Alert.alert('Error', 'Please enter a reason');
+    if (!rForm.reason_text) {
+      Alert.alert('Error', 'Reason text is required');
       return;
     }
-
-    try {
-      const reasonData = {
-        reason_text: reasonForm.reason_text,
-        category: reasonForm.category || null,
-        is_active: reasonForm.is_active,
-      };
-
-      if (editingReason) {
-        await supabase.from('failure_reasons').update(reasonData).eq('id', editingReason.id);
-      } else {
-        await supabase.from('failure_reasons').insert({
-          ...reasonData,
-          company_id: company!.id,
-          created_by: user!.id,
-        });
-      }
-      setReasonDialogVisible(false);
-      fetchData();
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to save reason');
+    const data = { reason_text: rForm.reason_text, category: rForm.category, is_active: rForm.is_active };
+    if (editingReason) {
+      await supabase.from('rejection_reasons').update(data).eq('id', editingReason.id);
+    } else {
+      await supabase.from('rejection_reasons').insert({ ...data, company_id: company!.id });
     }
+    setReasonDialog(false);
+    fetchData();
   };
 
-  const deleteReason = (id: string) => {
-    Alert.alert('Confirm Delete', 'Are you sure you want to delete this failure reason?', [
-      { text: 'Cancel', style: 'cancel' },
+  const deleteReason = (id: string) =>
+    Alert.alert('Delete?', '', [
+      { text: 'Cancel' },
       {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
-          try {
-            await supabase.from('failure_reasons').delete().eq('id', id);
-            fetchData();
-          } catch (error: any) {
-            Alert.alert('Error', error.message || 'Failed to delete');
-          }
+          await supabase.from('rejection_reasons').delete().eq('id', id);
+          fetchData();
         },
       },
     ]);
-  };
 
-  // Company CRUD (Owner only)
-  const openCompanyDialog = (companyData?: Company) => {
-    if (companyData) {
-      setEditingCompany(companyData);
-      setCompanyForm({
-        name: companyData.name,
-        code: companyData.code,
-        address: companyData.address || '',
-        contact_email: companyData.contact_email || '',
-        contact_phone: companyData.contact_phone || '',
-      });
-    } else {
-      setEditingCompany(null);
-      setCompanyForm({
-        name: '',
-        code: '',
-        address: '',
-        contact_email: '',
-        contact_phone: '',
-      });
-    }
-    setCompanyDialogVisible(true);
+  // Company CRUD
+  const openCompany = (c?: Company) => {
+    setEditingCompany(c || null);
+    setCForm(c ? { name: c.name, code: c.code, contact_email: c.contact_email || '' } : { name: '', code: '', contact_email: '' });
+    setCompanyDialog(true);
   };
 
   const saveCompany = async () => {
-    if (!companyForm.name || !companyForm.code) {
-      Alert.alert('Error', 'Please fill in company name and code');
+    if (!cForm.name || !cForm.code) {
+      Alert.alert('Error', 'Name and code are required');
       return;
     }
-
-    try {
-      const companyData = {
-        name: companyForm.name,
-        code: companyForm.code.toUpperCase(),
-        address: companyForm.address || null,
-        contact_email: companyForm.contact_email || null,
-        contact_phone: companyForm.contact_phone || null,
-      };
-
-      if (editingCompany) {
-        await supabase.from('companies').update(companyData).eq('id', editingCompany.id);
-      } else {
-        await supabase.from('companies').insert(companyData);
-      }
-      setCompanyDialogVisible(false);
-      fetchData();
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to save company');
+    const data = { name: cForm.name, code: cForm.code.toUpperCase(), contact_email: cForm.contact_email || null };
+    if (editingCompany) {
+      await supabase.from('companies').update(data).eq('id', editingCompany.id);
+    } else {
+      await supabase.from('companies').insert(data);
     }
+    setCompanyDialog(false);
+    fetchData();
   };
 
-  // User Role Management
-  const toggleUserRole = async (targetUser: User, newRole: UserRole) => {
-    if (targetUser.id === user?.id) {
-      Alert.alert('Error', 'You cannot change your own role');
-      return;
-    }
-
-    if (targetUser.role === 'owner') {
-      Alert.alert('Error', 'Cannot modify owner role');
-      return;
-    }
-
-    try {
-      await supabase.from('users').update({ role: newRole }).eq('id', targetUser.id);
-      fetchData();
-      Alert.alert('Success', `User role updated to ${newRole}`);
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to update role');
-    }
+  // User role toggle
+  const toggleRole = async (u: User, role: UserRole) => {
+    if (u.id === user?.id || u.role === 'owner') return;
+    await supabase.from('users').update({ role }).eq('id', u.id);
+    fetchData();
   };
 
-  // Render vehicle item
-  const renderVehicleItem = ({ item }: { item: Vehicle }) => {
-    const typeConfig = getVehicleTypeConfig(item.vehicle_type);
+  // Tab component
+  const Tab = ({ value, label, icon }: { value: TabValue; label: string; icon: string }) => (
+    <GlassCard onPress={() => setActiveTab(value)} style={[styles.tab, activeTab === value && styles.tabActive]} padding={10}>
+      <MaterialCommunityIcons name={icon as any} size={18} color={activeTab === value ? colors.primary : colors.textMuted} />
+      <Text style={[styles.tabText, activeTab === value && styles.tabTextActive]}>{label}</Text>
+    </GlassCard>
+  );
+
+  // List items
+  const VehicleItem = ({ item }: { item: VehicleEquipment }) => {
+    const tc = getEquipmentTypeConfig(item.equipment_type);
+    const statusColor = getStatusColor(item.actual_status);
     return (
-      <Card style={styles.card}>
-        <Card.Content style={styles.cardContent}>
-          <MaterialCommunityIcons name={typeConfig.icon as any} size={32} color="#6200EE" />
-          <View style={styles.cardInfo}>
-            <Text variant="titleMedium">{item.name}</Text>
-            <Text variant="bodySmall" style={styles.subText}>
-              {item.plate_number} | {typeConfig.label}
-            </Text>
-            {item.make && (
-              <Text variant="bodySmall" style={styles.subText}>
-                {item.make} {item.model} {item.year ? `(${item.year})` : ''}
-              </Text>
-            )}
+      <GlassCard style={styles.card} padding={12}>
+        <View style={styles.row}>
+          <View style={[styles.icon, { backgroundColor: `${colors.primary}15` }]}>
+            <MaterialCommunityIcons name={tc.icon as any} size={22} color={colors.primary} />
           </View>
-          <View style={styles.cardActions}>
-            <IconButton icon="pencil" size={20} onPress={() => openVehicleDialog(item)} />
-            <IconButton
-              icon="delete"
-              size={20}
-              iconColor="#F44336"
-              onPress={() => deleteVehicle(item.id)}
-            />
+          <View style={styles.info}>
+            <Text style={styles.name}>{item.plate_number}</Text>
+            <Text style={styles.sub}>{tc.label} - ({item.equipment_category})</Text>
+            {item.driver_name && <Text style={styles.sub}>{item.driver_name}</Text>}
+            <View style={styles.chipRow}>
+              <Chip mode="flat" style={[styles.chipSmall, { backgroundColor: `${statusColor}15` }]} textStyle={[styles.chipSmallText, { color: statusColor }]}>
+                {item.actual_status.charAt(0).toUpperCase() + item.actual_status.slice(1)}
+              </Chip>
+              {item.is_blacklisted && (
+                <Chip mode="flat" style={[styles.chipSmall, { backgroundColor: `${colors.error}15` }]} textStyle={[styles.chipSmallText, { color: colors.error }]}>
+                  Blacklisted
+                </Chip>
+              )}
+            </View>
           </View>
-        </Card.Content>
-      </Card>
+          <IconButton icon="pencil" size={18} iconColor={colors.textMuted} onPress={() => openVehicle(item)} />
+          <IconButton icon="delete" size={18} iconColor={colors.error} onPress={() => deleteVehicle(item.id)} />
+        </View>
+      </GlassCard>
     );
   };
 
-  // Render failure reason item
-  const renderReasonItem = ({ item }: { item: FailureReason }) => (
-    <Card style={styles.card}>
-      <Card.Content style={styles.cardContent}>
-        <MaterialCommunityIcons
-          name="alert-circle"
-          size={32}
-          color={item.is_active ? '#F44336' : '#999'}
-        />
-        <View style={styles.cardInfo}>
-          <Text variant="titleMedium">{item.reason_text}</Text>
-          {item.category && (
-            <Text variant="bodySmall" style={styles.subText}>
-              Category: {item.category}
-            </Text>
-          )}
-          <Chip
-            mode="flat"
-            style={{ backgroundColor: item.is_active ? '#E8F5E9' : '#FFEBEE', marginTop: 4 }}
-            textStyle={{ fontSize: 10 }}
-          >
+  const ProjectItem = ({ item }: { item: Project }) => (
+    <GlassCard style={styles.card} padding={12}>
+      <View style={styles.row}>
+        <View style={[styles.icon, { backgroundColor: `${colors.secondary}15` }]}>
+          <MaterialCommunityIcons name="clipboard-text" size={22} color={colors.secondary} />
+        </View>
+        <View style={styles.info}>
+          <Text style={styles.name}>{item.name}</Text>
+          {item.code && <Text style={styles.sub}>Code: {item.code}</Text>}
+          <Chip mode="flat" style={[styles.chipSmall, { backgroundColor: item.is_active ? `${colors.success}15` : `${colors.error}15`, marginTop: 4 }]} textStyle={[styles.chipSmallText, { color: item.is_active ? colors.success : colors.error }]}>
             {item.is_active ? 'Active' : 'Inactive'}
           </Chip>
         </View>
-        <View style={styles.cardActions}>
-          <IconButton icon="pencil" size={20} onPress={() => openReasonDialog(item)} />
-          <IconButton
-            icon="delete"
-            size={20}
-            iconColor="#F44336"
-            onPress={() => deleteReason(item.id)}
-          />
-        </View>
-      </Card.Content>
-    </Card>
+        <IconButton icon="pencil" size={18} iconColor={colors.textMuted} onPress={() => openProject(item)} />
+        <IconButton icon="delete" size={18} iconColor={colors.error} onPress={() => deleteProject(item.id)} />
+      </View>
+    </GlassCard>
   );
 
-  // Render user item
-  const renderUserItem = ({ item }: { item: User }) => (
-    <Card style={styles.card}>
-      <Card.Content style={styles.cardContent}>
-        <MaterialCommunityIcons
-          name="account"
-          size={32}
-          color={item.role === 'owner' ? '#FF9800' : item.role === 'admin' ? '#6200EE' : '#666'}
-        />
-        <View style={styles.cardInfo}>
-          <Text variant="titleMedium">{item.full_name}</Text>
-          <Text variant="bodySmall" style={styles.subText}>
-            {item.email}
-          </Text>
-          {isOwner && item.company && (
-            <Text variant="bodySmall" style={styles.subText}>
-              Company: {item.company.name}
-            </Text>
-          )}
-          <Chip
-            mode="flat"
-            style={{
-              backgroundColor:
-                item.role === 'owner' ? '#FFF3E0' : item.role === 'admin' ? '#EDE7F6' : '#E0E0E0',
-              marginTop: 4,
-            }}
-            textStyle={{ fontSize: 10 }}
-          >
-            {item.role.charAt(0).toUpperCase() + item.role.slice(1)}
-          </Chip>
+  const GateItem = ({ item }: { item: Gate }) => (
+    <GlassCard style={styles.card} padding={12}>
+      <View style={styles.row}>
+        <View style={[styles.icon, { backgroundColor: `${colors.warning}15` }]}>
+          <MaterialCommunityIcons name="gate" size={22} color={colors.warning} />
         </View>
-        {item.role !== 'owner' && item.id !== user?.id && (
-          <View style={styles.cardActions}>
-            {item.role === 'inspector' ? (
-              <Button mode="outlined" compact onPress={() => toggleUserRole(item, 'admin')}>
-                Make Admin
-              </Button>
-            ) : (
-              <Button mode="outlined" compact onPress={() => toggleUserRole(item, 'inspector')}>
-                Remove Admin
-              </Button>
-            )}
+        <View style={styles.info}>
+          <Text style={styles.name}>{item.name}</Text>
+          {item.location && <Text style={styles.sub}>{item.location}</Text>}
+          {item.project && <Text style={styles.sub}>Project: {item.project.name}</Text>}
+        </View>
+        <IconButton icon="pencil" size={18} iconColor={colors.textMuted} onPress={() => openGate(item)} />
+        <IconButton icon="delete" size={18} iconColor={colors.error} onPress={() => deleteGate(item.id)} />
+      </View>
+    </GlassCard>
+  );
+
+  const ReasonItem = ({ item }: { item: RejectionReason }) => {
+    const cat = REJECTION_CATEGORIES.find((c) => c.value === item.category) || REJECTION_CATEGORIES[0];
+    return (
+      <GlassCard style={styles.card} padding={12}>
+        <View style={styles.row}>
+          <View style={[styles.icon, { backgroundColor: `${cat.color}15` }]}>
+            <MaterialCommunityIcons name={cat.icon as any} size={22} color={cat.color} />
           </View>
-        )}
-      </Card.Content>
-    </Card>
-  );
+          <View style={styles.info}>
+            <Text style={styles.name}>{item.reason_text}</Text>
+            <View style={styles.chipRow}>
+              <Chip mode="flat" style={[styles.chipSmall, { backgroundColor: `${cat.color}15` }]} textStyle={[styles.chipSmallText, { color: cat.color }]}>
+                {cat.label}
+              </Chip>
+              <Chip mode="flat" style={[styles.chipSmall, { backgroundColor: item.is_active ? `${colors.success}15` : `${colors.error}15` }]} textStyle={[styles.chipSmallText, { color: item.is_active ? colors.success : colors.error }]}>
+                {item.is_active ? 'Active' : 'Inactive'}
+              </Chip>
+            </View>
+          </View>
+          <IconButton icon="pencil" size={18} iconColor={colors.textMuted} onPress={() => openReason(item)} />
+          <IconButton icon="delete" size={18} iconColor={colors.error} onPress={() => deleteReason(item.id)} />
+        </View>
+      </GlassCard>
+    );
+  };
 
-  // Render company item (Owner only)
-  const renderCompanyItem = ({ item }: { item: Company }) => (
-    <Card style={styles.card}>
-      <Card.Content style={styles.cardContent}>
-        <MaterialCommunityIcons name="domain" size={32} color="#6200EE" />
-        <View style={styles.cardInfo}>
-          <Text variant="titleMedium">{item.name}</Text>
-          <Text variant="bodySmall" style={styles.subText}>
-            Code: {item.code}
-          </Text>
-          {item.contact_email && (
-            <Text variant="bodySmall" style={styles.subText}>
-              {item.contact_email}
-            </Text>
+  const UserItem = ({ item }: { item: User }) => {
+    const rc = { owner: colors.warning, admin: colors.primary, inspector: colors.success };
+    return (
+      <GlassCard style={styles.card} padding={12}>
+        <View style={styles.row}>
+          <View style={[styles.icon, { backgroundColor: `${rc[item.role]}15` }]}>
+            <MaterialCommunityIcons name={item.role === 'owner' ? 'crown' : item.role === 'admin' ? 'shield-account' : 'account'} size={22} color={rc[item.role]} />
+          </View>
+          <View style={styles.info}>
+            <Text style={styles.name}>{item.full_name}</Text>
+            <Text style={styles.sub}>{item.email}</Text>
+            <Chip mode="flat" style={[styles.chipSmall, { backgroundColor: `${rc[item.role]}15`, marginTop: 4 }]} textStyle={[styles.chipSmallText, { color: rc[item.role] }]}>
+              {item.role.charAt(0).toUpperCase() + item.role.slice(1)}
+            </Chip>
+          </View>
+          {item.role !== 'owner' && item.id !== user?.id && (
+            <Button mode="text" compact onPress={() => toggleRole(item, item.role === 'inspector' ? 'admin' : 'inspector')} textColor={colors.primary}>
+              {item.role === 'inspector' ? 'Admin' : 'Remove'}
+            </Button>
           )}
-          <Chip
-            mode="flat"
-            style={{ backgroundColor: item.is_active ? '#E8F5E9' : '#FFEBEE', marginTop: 4 }}
-            textStyle={{ fontSize: 10 }}
-          >
+        </View>
+      </GlassCard>
+    );
+  };
+
+  const CompanyItem = ({ item }: { item: Company }) => (
+    <GlassCard style={styles.card} padding={12}>
+      <View style={styles.row}>
+        <View style={[styles.icon, { backgroundColor: `${colors.primary}15` }]}>
+          <MaterialCommunityIcons name="domain" size={22} color={colors.primary} />
+        </View>
+        <View style={styles.info}>
+          <Text style={styles.name}>{item.name}</Text>
+          <Text style={styles.sub}>Code: {item.code}</Text>
+          <Chip mode="flat" style={[styles.chipSmall, { backgroundColor: item.is_active ? `${colors.success}15` : `${colors.error}15`, marginTop: 4 }]} textStyle={[styles.chipSmallText, { color: item.is_active ? colors.success : colors.error }]}>
             {item.is_active ? 'Active' : 'Inactive'}
           </Chip>
         </View>
-        <View style={styles.cardActions}>
-          <IconButton icon="pencil" size={20} onPress={() => openCompanyDialog(item)} />
-        </View>
-      </Card.Content>
-    </Card>
+        <IconButton icon="pencil" size={18} iconColor={colors.textMuted} onPress={() => openCompany(item)} />
+      </View>
+    </GlassCard>
+  );
+
+  const Empty = ({ icon, text }: { icon: string; text: string }) => (
+    <GlassCard style={styles.empty} padding={32}>
+      <MaterialCommunityIcons name={icon as any} size={48} color={colors.textMuted} />
+      <Text style={styles.emptyText}>{text}</Text>
+    </GlassCard>
   );
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#6200EE" />
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
-  const tabButtons = [
-    { value: 'vehicles' as TabValue, label: 'Vehicles', icon: 'car' },
-    { value: 'reasons' as TabValue, label: 'Reasons', icon: 'alert-circle' },
-    { value: 'users' as TabValue, label: 'Users', icon: 'account-group' },
-    ...(isOwner ? [{ value: 'companies' as TabValue, label: 'Companies', icon: 'domain' }] : []),
-  ];
-
   return (
     <View style={styles.container}>
-      {/* Tab Selector */}
-      <SegmentedButtons
-        value={activeTab}
-        onValueChange={(value) => setActiveTab(value as TabValue)}
-        buttons={tabButtons}
-        style={styles.tabs}
-        density="small"
-      />
+      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+      <View style={styles.header}>
+        <Text style={styles.title}>Management</Text>
+      </View>
 
-      {/* Content */}
-      {activeTab === 'vehicles' && (
-        <FlatList
-          data={vehicles}
-          keyExtractor={(item) => item.id}
-          renderItem={renderVehicleItem}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <MaterialCommunityIcons name="car-off" size={64} color="#ccc" />
-              <Text style={styles.emptyText}>No vehicles yet</Text>
-            </View>
-          }
-        />
-      )}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabs}>
+        <Tab value="vehicles" label="Vehicles" icon="car" />
+        <Tab value="projects" label="Projects" icon="clipboard-text" />
+        <Tab value="gates" label="Gates" icon="gate" />
+        <Tab value="reasons" label="Reasons" icon="alert-circle" />
+        <Tab value="users" label="Users" icon="account-group" />
+        {isOwner && <Tab value="companies" label="Companies" icon="domain" />}
+      </ScrollView>
 
-      {activeTab === 'reasons' && (
-        <FlatList
-          data={failureReasons}
-          keyExtractor={(item) => item.id}
-          renderItem={renderReasonItem}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <MaterialCommunityIcons name="alert-circle-outline" size={64} color="#ccc" />
-              <Text style={styles.emptyText}>No failure reasons yet</Text>
-            </View>
-          }
-        />
-      )}
+      {activeTab === 'vehicles' && <FlatList data={vehicles} keyExtractor={(i) => i.id} renderItem={({ item }) => <VehicleItem item={item} />} contentContainerStyle={styles.list} ListEmptyComponent={<Empty icon="car-off" text="No vehicles/equipment" />} />}
+      {activeTab === 'projects' && <FlatList data={projects} keyExtractor={(i) => i.id} renderItem={({ item }) => <ProjectItem item={item} />} contentContainerStyle={styles.list} ListEmptyComponent={<Empty icon="clipboard-off" text="No projects" />} />}
+      {activeTab === 'gates' && <FlatList data={gates} keyExtractor={(i) => i.id} renderItem={({ item }) => <GateItem item={item} />} contentContainerStyle={styles.list} ListEmptyComponent={<Empty icon="gate" text="No gates" />} />}
+      {activeTab === 'reasons' && <FlatList data={rejectionReasons} keyExtractor={(i) => i.id} renderItem={({ item }) => <ReasonItem item={item} />} contentContainerStyle={styles.list} ListEmptyComponent={<Empty icon="alert-circle-outline" text="No rejection reasons" />} />}
+      {activeTab === 'users' && <FlatList data={users} keyExtractor={(i) => i.id} renderItem={({ item }) => <UserItem item={item} />} contentContainerStyle={styles.list} ListEmptyComponent={<Empty icon="account-off" text="No users" />} />}
+      {activeTab === 'companies' && isOwner && <FlatList data={companies} keyExtractor={(i) => i.id} renderItem={({ item }) => <CompanyItem item={item} />} contentContainerStyle={styles.list} ListEmptyComponent={<Empty icon="domain" text="No companies" />} />}
 
-      {activeTab === 'users' && (
-        <FlatList
-          data={users}
-          keyExtractor={(item) => item.id}
-          renderItem={renderUserItem}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <MaterialCommunityIcons name="account-off" size={64} color="#ccc" />
-              <Text style={styles.emptyText}>No users found</Text>
-            </View>
-          }
-        />
-      )}
-
-      {activeTab === 'companies' && isOwner && (
-        <FlatList
-          data={companies}
-          keyExtractor={(item) => item.id}
-          renderItem={renderCompanyItem}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <MaterialCommunityIcons name="domain" size={64} color="#ccc" />
-              <Text style={styles.emptyText}>No companies yet</Text>
-            </View>
-          }
-        />
-      )}
-
-      {/* FAB */}
-      {(activeTab === 'vehicles' || activeTab === 'reasons' || activeTab === 'companies') && (
+      {['vehicles', 'projects', 'gates', 'reasons', 'companies'].includes(activeTab) && (
         <FAB
           icon="plus"
           style={styles.fab}
-          color="#FFFFFF"
+          color={colors.white}
           onPress={() => {
-            if (activeTab === 'vehicles') openVehicleDialog();
-            else if (activeTab === 'reasons') openReasonDialog();
-            else if (activeTab === 'companies') openCompanyDialog();
+            if (activeTab === 'vehicles') openVehicle();
+            else if (activeTab === 'projects') openProject();
+            else if (activeTab === 'gates') openGate();
+            else if (activeTab === 'reasons') openReason();
+            else if (activeTab === 'companies') openCompany();
           }}
         />
       )}
 
-      {/* Vehicle Dialog */}
+      {/* Vehicle/Equipment Dialog */}
       <Portal>
-        <Dialog
-          visible={vehicleDialogVisible}
-          onDismiss={() => setVehicleDialogVisible(false)}
-          style={styles.dialog}
-        >
-          <Dialog.Title>{editingVehicle ? 'Edit Vehicle' : 'Add Vehicle'}</Dialog.Title>
-          <Dialog.ScrollArea style={styles.dialogScrollArea}>
-            <View style={styles.dialogContent}>
-              <TextInput
-                label="Vehicle Name *"
-                value={vehicleForm.name}
-                onChangeText={(text) => setVehicleForm({ ...vehicleForm, name: text })}
-                mode="outlined"
-                style={styles.dialogInput}
-              />
-              <TextInput
-                label="Plate Number *"
-                value={vehicleForm.plate_number}
-                onChangeText={(text) => setVehicleForm({ ...vehicleForm, plate_number: text })}
-                mode="outlined"
-                style={styles.dialogInput}
-              />
+        <Dialog visible={vehicleDialog} onDismiss={() => setVehicleDialog(false)} style={styles.dialog}>
+          <Dialog.Title style={styles.dialogTitle}>{editingVehicle ? 'Edit' : 'Add'} Vehicle/Equipment</Dialog.Title>
+          <Dialog.ScrollArea style={{ maxHeight: 400 }}>
+            <View style={{ padding: 16 }}>
+              <TextInput label="Plate Number *" value={vForm.plate_number} onChangeText={(t) => setVForm({ ...vForm, plate_number: t.toUpperCase() })} mode="outlined" style={styles.input} outlineColor={colors.cardBorder} activeOutlineColor={colors.primary} textColor={colors.textPrimary} />
 
-              <Text variant="labelMedium" style={styles.inputLabel}>
-                Vehicle Type
-              </Text>
-              <Menu
-                visible={vehicleTypeMenuVisible}
-                onDismiss={() => setVehicleTypeMenuVisible(false)}
-                anchor={
-                  <Button
-                    mode="outlined"
-                    onPress={() => setVehicleTypeMenuVisible(true)}
-                    style={styles.dialogInput}
-                    icon={getVehicleTypeConfig(vehicleForm.vehicle_type).icon}
-                  >
-                    {getVehicleTypeConfig(vehicleForm.vehicle_type).label}
-                  </Button>
-                }
-                contentStyle={styles.menuContent}
-              >
-                {VEHICLE_TYPES.map((type) => (
-                  <Menu.Item
-                    key={type.value}
-                    onPress={() => {
-                      setVehicleForm({ ...vehicleForm, vehicle_type: type.value });
-                      setVehicleTypeMenuVisible(false);
-                    }}
-                    title={type.label}
-                    leadingIcon={type.icon}
-                  />
-                ))}
+              <Menu visible={eTypeMenu} onDismiss={() => setETypeMenu(false)} anchor={<Button mode="outlined" onPress={() => setETypeMenu(true)} style={styles.input}>{getEquipmentTypeConfig(vForm.equipment_type).label}</Button>}>
+                <ScrollView style={{ maxHeight: 300 }}>
+                  {EQUIPMENT_TYPES.map((t) => (
+                    <Menu.Item key={t.value} onPress={() => { setVForm({ ...vForm, equipment_type: t.value, equipment_category: t.category }); setETypeMenu(false); }} title={`${t.label} (${t.category})`} />
+                  ))}
+                </ScrollView>
               </Menu>
 
-              <TextInput
-                label="Make (e.g., Toyota)"
-                value={vehicleForm.make}
-                onChangeText={(text) => setVehicleForm({ ...vehicleForm, make: text })}
-                mode="outlined"
-                style={styles.dialogInput}
-              />
-              <TextInput
-                label="Model (e.g., Hilux)"
-                value={vehicleForm.model}
-                onChangeText={(text) => setVehicleForm({ ...vehicleForm, model: text })}
-                mode="outlined"
-                style={styles.dialogInput}
-              />
-              <TextInput
-                label="Year"
-                value={vehicleForm.year}
-                onChangeText={(text) => setVehicleForm({ ...vehicleForm, year: text })}
-                mode="outlined"
-                keyboardType="numeric"
-                style={styles.dialogInput}
-              />
-              <TextInput
-                label="VIN (Vehicle ID Number)"
-                value={vehicleForm.vin}
-                onChangeText={(text) => setVehicleForm({ ...vehicleForm, vin: text })}
-                mode="outlined"
-                style={styles.dialogInput}
-              />
-              <TextInput
-                label="Notes"
-                value={vehicleForm.notes}
-                onChangeText={(text) => setVehicleForm({ ...vehicleForm, notes: text })}
-                mode="outlined"
-                multiline
-                style={styles.dialogInput}
-              />
+              <TextInput label="Driver Name" value={vForm.driver_name} onChangeText={(t) => setVForm({ ...vForm, driver_name: t })} mode="outlined" style={styles.input} outlineColor={colors.cardBorder} activeOutlineColor={colors.primary} textColor={colors.textPrimary} />
+              <TextInput label="National ID Number" value={vForm.national_id_number} onChangeText={(t) => setVForm({ ...vForm, national_id_number: t })} mode="outlined" style={styles.input} outlineColor={colors.cardBorder} activeOutlineColor={colors.primary} textColor={colors.textPrimary} keyboardType="numeric" />
+              <TextInput label="Year of Manufacture" value={vForm.year_of_manufacture} onChangeText={(t) => setVForm({ ...vForm, year_of_manufacture: t })} mode="outlined" style={styles.input} outlineColor={colors.cardBorder} activeOutlineColor={colors.primary} textColor={colors.textPrimary} keyboardType="numeric" />
+              <TextInput label="Client/Company" value={vForm.client_company} onChangeText={(t) => setVForm({ ...vForm, client_company: t })} mode="outlined" style={styles.input} outlineColor={colors.cardBorder} activeOutlineColor={colors.primary} textColor={colors.textPrimary} />
             </View>
           </Dialog.ScrollArea>
           <Dialog.Actions>
-            <Button onPress={() => setVehicleDialogVisible(false)}>Cancel</Button>
-            <Button onPress={saveVehicle}>Save</Button>
+            <Button onPress={() => setVehicleDialog(false)} textColor={colors.textMuted}>Cancel</Button>
+            <Button onPress={saveVehicle} textColor={colors.primary}>Save</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>
 
-      {/* Failure Reason Dialog */}
+      {/* Project Dialog */}
       <Portal>
-        <Dialog visible={reasonDialogVisible} onDismiss={() => setReasonDialogVisible(false)}>
-          <Dialog.Title>{editingReason ? 'Edit Failure Reason' : 'Add Failure Reason'}</Dialog.Title>
+        <Dialog visible={projectDialog} onDismiss={() => setProjectDialog(false)} style={styles.dialog}>
+          <Dialog.Title style={styles.dialogTitle}>{editingProject ? 'Edit' : 'Add'} Project</Dialog.Title>
           <Dialog.Content>
-            <TextInput
-              label="Reason *"
-              value={reasonForm.reason_text}
-              onChangeText={(text) => setReasonForm({ ...reasonForm, reason_text: text })}
-              mode="outlined"
-              style={styles.dialogInput}
-            />
-            <TextInput
-              label="Category (e.g., Brakes, Tires)"
-              value={reasonForm.category}
-              onChangeText={(text) => setReasonForm({ ...reasonForm, category: text })}
-              mode="outlined"
-              style={styles.dialogInput}
-            />
+            <TextInput label="Project Name *" value={pForm.name} onChangeText={(t) => setPForm({ ...pForm, name: t })} mode="outlined" style={styles.input} outlineColor={colors.cardBorder} activeOutlineColor={colors.primary} textColor={colors.textPrimary} />
+            <TextInput label="Code" value={pForm.code} onChangeText={(t) => setPForm({ ...pForm, code: t.toUpperCase() })} mode="outlined" style={styles.input} outlineColor={colors.cardBorder} activeOutlineColor={colors.primary} textColor={colors.textPrimary} />
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setProjectDialog(false)} textColor={colors.textMuted}>Cancel</Button>
+            <Button onPress={saveProject} textColor={colors.primary}>Save</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      {/* Gate Dialog */}
+      <Portal>
+        <Dialog visible={gateDialog} onDismiss={() => setGateDialog(false)} style={styles.dialog}>
+          <Dialog.Title style={styles.dialogTitle}>{editingGate ? 'Edit' : 'Add'} Gate</Dialog.Title>
+          <Dialog.Content>
+            <TextInput label="Gate Name *" value={gForm.name} onChangeText={(t) => setGForm({ ...gForm, name: t })} mode="outlined" style={styles.input} outlineColor={colors.cardBorder} activeOutlineColor={colors.primary} textColor={colors.textPrimary} />
+            <TextInput label="Location" value={gForm.location} onChangeText={(t) => setGForm({ ...gForm, location: t })} mode="outlined" style={styles.input} outlineColor={colors.cardBorder} activeOutlineColor={colors.primary} textColor={colors.textPrimary} />
+            <Menu visible={projectMenu} onDismiss={() => setProjectMenu(false)} anchor={<Button mode="outlined" onPress={() => setProjectMenu(true)} style={styles.input}>{projects.find((p) => p.id === gForm.project_id)?.name || 'Select Project'}</Button>}>
+              <Menu.Item onPress={() => { setGForm({ ...gForm, project_id: '' }); setProjectMenu(false); }} title="None" />
+              {projects.map((p) => (
+                <Menu.Item key={p.id} onPress={() => { setGForm({ ...gForm, project_id: p.id }); setProjectMenu(false); }} title={p.name} />
+              ))}
+            </Menu>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setGateDialog(false)} textColor={colors.textMuted}>Cancel</Button>
+            <Button onPress={saveGate} textColor={colors.primary}>Save</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      {/* Reason Dialog */}
+      <Portal>
+        <Dialog visible={reasonDialog} onDismiss={() => setReasonDialog(false)} style={styles.dialog}>
+          <Dialog.Title style={styles.dialogTitle}>{editingReason ? 'Edit' : 'Add'} Rejection Reason</Dialog.Title>
+          <Dialog.Content>
+            <TextInput label="Reason *" value={rForm.reason_text} onChangeText={(t) => setRForm({ ...rForm, reason_text: t })} mode="outlined" style={styles.input} outlineColor={colors.cardBorder} activeOutlineColor={colors.primary} textColor={colors.textPrimary} multiline />
+            <Menu visible={catMenu} onDismiss={() => setCatMenu(false)} anchor={<Button mode="outlined" onPress={() => setCatMenu(true)} style={styles.input}>{REJECTION_CATEGORIES.find((c) => c.value === rForm.category)?.label}</Button>}>
+              {REJECTION_CATEGORIES.map((c) => (
+                <Menu.Item key={c.value} onPress={() => { setRForm({ ...rForm, category: c.value }); setCatMenu(false); }} title={c.label} />
+              ))}
+            </Menu>
             <View style={styles.switchRow}>
-              <Text>Active</Text>
-              <Switch
-                value={reasonForm.is_active}
-                onValueChange={(value) => setReasonForm({ ...reasonForm, is_active: value })}
-              />
+              <Text style={{ color: colors.textPrimary }}>Active</Text>
+              <Switch value={rForm.is_active} onValueChange={(v) => setRForm({ ...rForm, is_active: v })} color={colors.primary} />
             </View>
           </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={() => setReasonDialogVisible(false)}>Cancel</Button>
-            <Button onPress={saveReason}>Save</Button>
+            <Button onPress={() => setReasonDialog(false)} textColor={colors.textMuted}>Cancel</Button>
+            <Button onPress={saveReason} textColor={colors.primary}>Save</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>
 
-      {/* Company Dialog (Owner only) */}
+      {/* Company Dialog */}
       <Portal>
-        <Dialog visible={companyDialogVisible} onDismiss={() => setCompanyDialogVisible(false)}>
-          <Dialog.Title>{editingCompany ? 'Edit Company' : 'Add Company'}</Dialog.Title>
+        <Dialog visible={companyDialog} onDismiss={() => setCompanyDialog(false)} style={styles.dialog}>
+          <Dialog.Title style={styles.dialogTitle}>{editingCompany ? 'Edit' : 'Add'} Company</Dialog.Title>
           <Dialog.Content>
-            <TextInput
-              label="Company Name *"
-              value={companyForm.name}
-              onChangeText={(text) => setCompanyForm({ ...companyForm, name: text })}
-              mode="outlined"
-              style={styles.dialogInput}
-            />
-            <TextInput
-              label="Company Code *"
-              value={companyForm.code}
-              onChangeText={(text) => setCompanyForm({ ...companyForm, code: text.toUpperCase() })}
-              mode="outlined"
-              autoCapitalize="characters"
-              placeholder="e.g., ACME"
-              style={styles.dialogInput}
-            />
-            <TextInput
-              label="Address"
-              value={companyForm.address}
-              onChangeText={(text) => setCompanyForm({ ...companyForm, address: text })}
-              mode="outlined"
-              style={styles.dialogInput}
-            />
-            <TextInput
-              label="Contact Email"
-              value={companyForm.contact_email}
-              onChangeText={(text) => setCompanyForm({ ...companyForm, contact_email: text })}
-              mode="outlined"
-              keyboardType="email-address"
-              style={styles.dialogInput}
-            />
-            <TextInput
-              label="Contact Phone"
-              value={companyForm.contact_phone}
-              onChangeText={(text) => setCompanyForm({ ...companyForm, contact_phone: text })}
-              mode="outlined"
-              keyboardType="phone-pad"
-              style={styles.dialogInput}
-            />
+            <TextInput label="Name *" value={cForm.name} onChangeText={(t) => setCForm({ ...cForm, name: t })} mode="outlined" style={styles.input} outlineColor={colors.cardBorder} activeOutlineColor={colors.primary} textColor={colors.textPrimary} />
+            <TextInput label="Code *" value={cForm.code} onChangeText={(t) => setCForm({ ...cForm, code: t.toUpperCase() })} mode="outlined" style={styles.input} outlineColor={colors.cardBorder} activeOutlineColor={colors.primary} textColor={colors.textPrimary} />
+            <TextInput label="Contact Email" value={cForm.contact_email} onChangeText={(t) => setCForm({ ...cForm, contact_email: t })} mode="outlined" style={styles.input} outlineColor={colors.cardBorder} activeOutlineColor={colors.primary} textColor={colors.textPrimary} keyboardType="email-address" />
           </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={() => setCompanyDialogVisible(false)}>Cancel</Button>
-            <Button onPress={saveCompany}>Save</Button>
+            <Button onPress={() => setCompanyDialog(false)} textColor={colors.textMuted}>Cancel</Button>
+            <Button onPress={saveCompany} textColor={colors.primary}>Save</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>
@@ -771,84 +618,30 @@ export default function AdminScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  tabs: {
-    margin: 12,
-  },
-  listContent: {
-    padding: 8,
-    paddingBottom: 80,
-  },
-  card: {
-    marginHorizontal: 8,
-    marginVertical: 4,
-    backgroundColor: '#FFFFFF',
-  },
-  cardContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  cardInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  cardActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  subText: {
-    color: '#666',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 64,
-  },
-  emptyText: {
-    color: '#999',
-    marginTop: 16,
-  },
-  fab: {
-    position: 'absolute',
-    margin: 16,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#6200EE',
-  },
-  dialog: {
-    maxHeight: '80%',
-  },
-  dialogScrollArea: {
-    maxHeight: 400,
-    paddingHorizontal: 0,
-  },
-  dialogContent: {
-    paddingHorizontal: 24,
-  },
-  dialogInput: {
-    marginBottom: 12,
-  },
-  inputLabel: {
-    marginBottom: 4,
-    color: '#666',
-  },
-  menuContent: {
-    backgroundColor: '#FFFFFF',
-    maxHeight: 300,
-  },
-  switchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 8,
-  },
+  container: { flex: 1, backgroundColor: colors.background },
+  loading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+  header: { paddingTop: 50, paddingHorizontal: 16, paddingBottom: 12 },
+  title: { color: colors.textPrimary, fontSize: 24, fontWeight: 'bold' },
+  tabs: { paddingHorizontal: 8, marginBottom: 8, maxHeight: 50 },
+  tab: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 4, gap: 6 },
+  tabActive: { borderWidth: 1, borderColor: colors.primary },
+  tabText: { color: colors.textMuted, fontSize: 12, fontWeight: '500' },
+  tabTextActive: { color: colors.primary },
+  list: { padding: 8, paddingBottom: 100 },
+  card: { marginHorizontal: 8, marginVertical: 3 },
+  row: { flexDirection: 'row', alignItems: 'center' },
+  icon: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginRight: 10 },
+  info: { flex: 1 },
+  name: { color: colors.textPrimary, fontWeight: '600', fontSize: 14 },
+  sub: { color: colors.textSecondary, fontSize: 12 },
+  chipRow: { flexDirection: 'row', gap: 6, marginTop: 4 },
+  chipSmall: { height: 22, backgroundColor: colors.surfaceLight },
+  chipSmallText: { fontSize: 10, color: colors.textSecondary },
+  empty: { alignItems: 'center', margin: 16 },
+  emptyText: { color: colors.textMuted, marginTop: 12 },
+  fab: { position: 'absolute', right: 16, bottom: 80, backgroundColor: colors.primary },
+  dialog: { backgroundColor: colors.card },
+  dialogTitle: { color: colors.textPrimary },
+  input: { marginBottom: 10, backgroundColor: colors.inputBackground },
+  switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
 });

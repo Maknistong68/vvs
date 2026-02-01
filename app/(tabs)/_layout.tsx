@@ -1,74 +1,83 @@
 import { Tabs } from 'expo-router';
-import { useAuth, useIsAdmin } from '../../lib/auth';
+import { useIsAdmin } from '../../lib/auth';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { colors } from '../../lib/theme';
+import { View } from 'react-native';
 
 export default function TabsLayout() {
-  const { user } = useAuth();
   const isAdmin = useIsAdmin();
 
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: '#6200EE',
-        tabBarInactiveTintColor: '#666',
-        tabBarStyle: {
-          backgroundColor: '#FFFFFF',
-          borderTopWidth: 1,
-          borderTopColor: '#e0e0e0',
-          paddingBottom: 5,
-          paddingTop: 5,
-          height: 60,
-        },
-        headerStyle: {
-          backgroundColor: '#6200EE',
-        },
-        headerTintColor: '#FFFFFF',
-        headerTitleStyle: {
-          fontWeight: 'bold',
-        },
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Dashboard',
-          tabBarLabel: 'Dashboard',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="view-dashboard" color={color} size={size} />
-          ),
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <Tabs
+        screenOptions={{
+          headerShown: false, // Hide header - screens have their own titles
+          tabBarActiveTintColor: colors.primary,
+          tabBarInactiveTintColor: colors.textMuted,
+          tabBarStyle: {
+            backgroundColor: colors.card,
+            borderTopWidth: 1,
+            borderTopColor: colors.cardBorder,
+            paddingBottom: 8,
+            paddingTop: 8,
+            height: 65,
+          },
+          tabBarLabelStyle: {
+            fontSize: 11,
+            fontWeight: '600',
+          },
+          sceneStyle: {
+            backgroundColor: colors.background,
+          },
         }}
-      />
-      <Tabs.Screen
-        name="inspections"
-        options={{
-          title: 'Inspections',
-          tabBarLabel: 'Inspections',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="clipboard-check" color={color} size={size} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="admin"
-        options={{
-          title: 'Admin Panel',
-          tabBarLabel: 'Admin',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="shield-account" color={color} size={size} />
-          ),
-          href: isAdmin ? undefined : null, // Hide if not admin
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'Settings',
-          tabBarLabel: 'Settings',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="cog" color={color} size={size} />
-          ),
-        }}
-      />
-    </Tabs>
+      >
+        <Tabs.Screen
+          name="index"
+          options={{
+            tabBarLabel: 'Home',
+            tabBarIcon: ({ color, size }) => (
+              <MaterialCommunityIcons name="view-dashboard" color={color} size={size} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="inspections"
+          options={{
+            tabBarLabel: 'Inspect',
+            tabBarIcon: ({ color, size }) => (
+              <MaterialCommunityIcons name="clipboard-check" color={color} size={size} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="certificates"
+          options={{
+            tabBarLabel: 'Certs',
+            tabBarIcon: ({ color, size }) => (
+              <MaterialCommunityIcons name="certificate" color={color} size={size} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="admin"
+          options={{
+            tabBarLabel: 'Manage',
+            tabBarIcon: ({ color, size }) => (
+              <MaterialCommunityIcons name="cog" color={color} size={size} />
+            ),
+            href: isAdmin ? undefined : null,
+          }}
+        />
+        <Tabs.Screen
+          name="settings"
+          options={{
+            tabBarLabel: 'Profile',
+            tabBarIcon: ({ color, size }) => (
+              <MaterialCommunityIcons name="account-circle" color={color} size={size} />
+            ),
+          }}
+        />
+      </Tabs>
+    </View>
   );
 }

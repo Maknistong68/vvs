@@ -1,23 +1,9 @@
 import { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { PaperProvider, MD3LightTheme } from 'react-native-paper';
+import { PaperProvider } from 'react-native-paper';
 import { AuthProvider, useAuth } from '../lib/auth';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
-
-// Custom theme
-const theme = {
-  ...MD3LightTheme,
-  colors: {
-    ...MD3LightTheme.colors,
-    primary: '#6200EE',
-    primaryContainer: '#BB86FC',
-    secondary: '#03DAC6',
-    secondaryContainer: '#018786',
-    error: '#CF6679',
-    background: '#f5f5f5',
-    surface: '#FFFFFF',
-  },
-};
+import { paperTheme, colors } from '../lib/theme';
 
 function RootLayoutNav() {
   const { session, loading } = useAuth();
@@ -26,28 +12,27 @@ function RootLayoutNav() {
 
   useEffect(() => {
     if (loading) return;
-
     const inAuthGroup = segments[0] === '(auth)';
-
-    if (!session && !inAuthGroup) {
-      // Redirect to login if not authenticated
-      router.replace('/(auth)/login');
-    } else if (session && inAuthGroup) {
-      // Redirect to home if authenticated but on auth screen
-      router.replace('/(tabs)');
-    }
+    if (!session && !inAuthGroup) router.replace('/(auth)/login');
+    else if (session && inAuthGroup) router.replace('/(tabs)');
   }, [session, loading, segments]);
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#6200EE" />
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: colors.background },
+        animation: 'slide_from_right',
+      }}
+    >
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen
@@ -56,6 +41,8 @@ function RootLayoutNav() {
           headerShown: true,
           title: 'Inspection Details',
           presentation: 'modal',
+          headerStyle: { backgroundColor: colors.card },
+          headerTintColor: colors.textPrimary,
         }}
       />
     </Stack>
@@ -64,7 +51,7 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   return (
-    <PaperProvider theme={theme}>
+    <PaperProvider theme={paperTheme}>
       <AuthProvider>
         <RootLayoutNav />
       </AuthProvider>
@@ -73,10 +60,10 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: {
+  loading: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
   },
 });
