@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet, FlatList, RefreshControl, StatusBar, Alert, ScrollView } from 'react-native';
-import { Text, Searchbar, ActivityIndicator, SegmentedButtons, Dialog, Portal, Button, TextInput, Menu, RadioButton } from 'react-native-paper';
+import { Text, Searchbar, ActivityIndicator, SegmentedButtons, Dialog, Portal, Button, TextInput, Menu, RadioButton, FAB } from 'react-native-paper';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { supabase, VehicleEquipment, RejectionReason, getEquipmentTypeConfig } from '../../lib/supabase';
-import { useAuth } from '../../lib/auth';
+import { supabase, VehicleEquipment, RejectionReason, EquipmentType, EQUIPMENT_TYPES, getEquipmentTypeConfig, getCategoryDisplay } from '../../lib/supabase';
+import { useAuth, useCanAddVehicles } from '../../lib/auth';
 import { colors, statusColors, glass } from '../../lib/theme';
+import { INSPECTION_PERIOD_MONTHS, MENU_MAX_HEIGHT, getErrorMessage } from '../../lib/constants';
 import GlassCard from '../../components/GlassCard';
 import GlassBackground from '../../components/GlassBackground';
 
 export default function InspectionsScreen() {
-  const { user } = useAuth();
+  const { user, company } = useAuth();
+  const { canAddVehicles } = useCanAddVehicles();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [vehicles, setVehicles] = useState<VehicleEquipment[]>([]);
@@ -27,6 +29,16 @@ export default function InspectionsScreen() {
   const [reasonMenu, setReasonMenu] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // Add vehicle dialog
+  const [addVehicleDialog, setAddVehicleDialog] = useState(false);
+  const [vehicleForm, setVehicleForm] = useState({
+    plate_number: '',
+    equipment_type: 'light_vehicle' as EquipmentType,
+    driver_name: '',
+  });
+  const [equipmentTypeMenu, setEquipmentTypeMenu] = useState(false);
+  const [savingVehicle, setSavingVehicle] = useState(false);
+
   const fetchData = useCallback(async () => {
     try {
       const [vehiclesRes, reasonsRes] = await Promise.all([
@@ -34,20 +46,16 @@ export default function InspectionsScreen() {
         supabase.from('rejection_reasons').select('*').eq('is_active', true).order('reason_text'),
       ]);
 
-      if (vehiclesRes.error) {
-        console.error('Vehicles error:', vehiclesRes.error.message);
-      } else if (vehiclesRes.data) {
+      if (!vehiclesRes.error && vehiclesRes.data) {
         setVehicles(vehiclesRes.data);
         setFilteredVehicles(vehiclesRes.data);
       }
 
-      if (reasonsRes.error) {
-        console.error('Reasons error:', reasonsRes.error.message);
-      } else if (reasonsRes.data) {
+      if (!reasonsRes.error && reasonsRes.data) {
         setRejectionReasons(reasonsRes.data);
       }
-    } catch (error) {
-      console.error('Error:', error);
+    } catch {
+      // Silently handle fetch errors - user can pull to refresh
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -99,7 +107,7 @@ export default function InspectionsScreen() {
 
       if (inspectionResult === 'verified') {
         const nextDate = new Date();
-        nextDate.setMonth(nextDate.getMonth() + 3);
+        nextDate.setMonth(nextDate.getMonth() + INSPECTION_PERIOD_MONTHS);
         updateData.next_inspection_date = nextDate.toISOString().split('T')[0];
         updateData.expected_status = 'verified';
       } else {
@@ -116,10 +124,67 @@ export default function InspectionsScreen() {
       Alert.alert('Success', `Vehicle ${inspectionResult === 'verified' ? 'verified' : 'rejected'} successfully`);
       setInspectDialog(false);
       fetchData();
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to submit inspection');
+    } catch (err) {
+      Alert.alert('Error', getErrorMessage(err, 'Failed to submit inspection'));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const openAddVehicle = () => {
+    setVehicleForm({
+      plate_number: '',
+      equipment_type: 'light_vehicle',
+      driver_name: '',
+    });
+    setAddVehicleDialog(true);
+  };
+
+  const saveVehicle = async (openInspectionAfter: boolean = false) => {
+    if (!vehicleForm.plate_number.trim()) {
+      Alert.alert('Error', 'Plate number is required');
+      return;
+    }
+    if (!company?.id || !user?.id) {
+      Alert.alert('Error', 'Session expired. Please log in again.');
+      return;
+    }
+
+    setSavingVehicle(true);
+    try {
+      // Get the equipment category from the selected type
+      const typeConfig = EQUIPMENT_TYPES.find(t => t.value === vehicleForm.equipment_type);
+      const equipmentCategory = typeConfig?.category || 'B';
+
+      const { data: newVehicle, error } = await supabase
+        .from('vehicles_equipment')
+        .insert({
+          plate_number: vehicleForm.plate_number.toUpperCase().trim(),
+          equipment_type: vehicleForm.equipment_type,
+          equipment_category: equipmentCategory,
+          driver_name: vehicleForm.driver_name.trim() || null,
+          company_id: company.id,
+          created_by: user.id,
+          actual_status: 'pending',
+          expected_status: 'verified',
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      Alert.alert('Success', 'Vehicle added successfully');
+      setAddVehicleDialog(false);
+      fetchData();
+
+      // Optionally open inspection dialog for the new vehicle
+      if (openInspectionAfter && newVehicle) {
+        setTimeout(() => openInspection(newVehicle), 300);
+      }
+    } catch (err) {
+      Alert.alert('Error', getErrorMessage(err, 'Failed to add vehicle'));
+    } finally {
+      setSavingVehicle(false);
     }
   };
 
@@ -139,7 +204,7 @@ export default function InspectionsScreen() {
           </View>
           <View style={styles.info}>
             <Text style={styles.plate}>{item.plate_number}</Text>
-            <Text style={styles.type}>{eq.label} ({item.equipment_category})</Text>
+            <Text style={styles.type}>{eq.label} - {getCategoryDisplay(item.equipment_category)}</Text>
             {item.driver_name && (
               <View style={styles.driverRow}>
                 <MaterialCommunityIcons name="account" size={12} color={colors.textMuted} />
@@ -318,6 +383,77 @@ export default function InspectionsScreen() {
           </Dialog.Actions>
         </Dialog>
       </Portal>
+
+      {/* Add Vehicle Dialog */}
+      <Portal>
+        <Dialog visible={addVehicleDialog} onDismiss={() => setAddVehicleDialog(false)} style={styles.dialog}>
+          <Dialog.Title style={styles.dialogTitle}>Add Vehicle</Dialog.Title>
+          <Dialog.ScrollArea style={{ maxHeight: 400 }}>
+            <View style={{ padding: 16 }}>
+              <Text style={styles.label}>Plate Number *</Text>
+              <TextInput
+                value={vehicleForm.plate_number}
+                onChangeText={(t) => setVehicleForm({ ...vehicleForm, plate_number: t.toUpperCase() })}
+                mode="outlined"
+                placeholder="Enter plate number"
+                style={styles.input}
+                outlineColor={colors.inputBorder}
+                activeOutlineColor={colors.primary}
+                textColor={colors.textPrimary}
+              />
+
+              <Text style={styles.label}>Equipment Type *</Text>
+              <Menu
+                visible={equipmentTypeMenu}
+                onDismiss={() => setEquipmentTypeMenu(false)}
+                anchor={
+                  <Button mode="outlined" onPress={() => setEquipmentTypeMenu(true)} style={styles.menuButton} textColor={colors.textPrimary}>
+                    {getEquipmentTypeConfig(vehicleForm.equipment_type).label}
+                  </Button>
+                }
+              >
+                <ScrollView style={{ maxHeight: 300 }}>
+                  {EQUIPMENT_TYPES.map((t) => (
+                    <Menu.Item
+                      key={t.value}
+                      onPress={() => { setVehicleForm({ ...vehicleForm, equipment_type: t.value }); setEquipmentTypeMenu(false); }}
+                      title={`${t.label} - ${getCategoryDisplay(t.category)}`}
+                    />
+                  ))}
+                </ScrollView>
+              </Menu>
+
+              <Text style={styles.label}>Driver Name (Optional)</Text>
+              <TextInput
+                value={vehicleForm.driver_name}
+                onChangeText={(t) => setVehicleForm({ ...vehicleForm, driver_name: t })}
+                mode="outlined"
+                placeholder="Enter driver name"
+                style={styles.input}
+                outlineColor={colors.inputBorder}
+                activeOutlineColor={colors.primary}
+                textColor={colors.textPrimary}
+              />
+            </View>
+          </Dialog.ScrollArea>
+          <Dialog.Actions>
+            <Button onPress={() => setAddVehicleDialog(false)} textColor={colors.textMuted} disabled={savingVehicle}>Cancel</Button>
+            <Button onPress={() => saveVehicle(false)} loading={savingVehicle} disabled={savingVehicle} textColor={colors.primary}>Save</Button>
+            <Button onPress={() => saveVehicle(true)} loading={savingVehicle} disabled={savingVehicle} textColor={colors.success}>Save & Inspect</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      {/* FAB for adding vehicles - only visible to inspectors/admins/owners */}
+      {canAddVehicles && (
+        <FAB
+          icon="plus"
+          style={styles.fab}
+          color={colors.white}
+          onPress={openAddVehicle}
+          label="Add Vehicle"
+        />
+      )}
     </GlassBackground>
   );
 }
@@ -360,4 +496,5 @@ const styles = StyleSheet.create({
   radioRow: { backgroundColor: colors.surfaceLight, borderRadius: 8, marginBottom: 4 },
   menuButton: { marginBottom: 8, borderColor: colors.inputBorder },
   input: { backgroundColor: colors.inputBackground },
+  fab: { position: 'absolute', right: 16, bottom: 80, backgroundColor: colors.primary },
 });

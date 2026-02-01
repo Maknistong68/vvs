@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase, User, UserRole, Company } from './supabase';
-import { AUTH_TIMEOUT_MS } from './constants';
+import { AUTH_TIMEOUT_MS, getErrorMessage } from './constants';
 
 interface AuthContextType {
   session: Session | null;
@@ -134,8 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       return { error: error ? new Error(error.message) : null };
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Sign in failed';
-      return { error: new Error(message) };
+      return { error: new Error(getErrorMessage(err, 'Sign in failed')) };
     }
   };
 
@@ -175,8 +174,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       return { error: error ? new Error(error.message) : null };
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Sign up failed';
-      return { error: new Error(message) };
+      return { error: new Error(getErrorMessage(err, 'Sign up failed')) };
     }
   };
 
@@ -280,4 +278,11 @@ export function useCanManageInspections() {
 export function useCanManageCompanies() {
   const { role } = useAuth();
   return role === 'owner';
+}
+
+export function useCanAddVehicles() {
+  const { role, loading } = useAuth();
+  // Inspectors, admins, and owners can add vehicles during inspection
+  const canAdd = role === 'inspector' || role === 'admin' || role === 'owner';
+  return { canAddVehicles: canAdd, loading };
 }

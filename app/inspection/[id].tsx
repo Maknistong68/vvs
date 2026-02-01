@@ -3,9 +3,10 @@ import { View, StyleSheet, ScrollView, Alert, StatusBar } from 'react-native';
 import { Text, Button, ActivityIndicator, RadioButton, Menu } from 'react-native-paper';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { supabase, VehicleEquipment, RejectionReason, getEquipmentTypeConfig } from '../../lib/supabase';
+import { supabase, VehicleEquipment, RejectionReason, getEquipmentTypeConfig, getCategoryDisplay } from '../../lib/supabase';
 import { useAuth, useIsContractor } from '../../lib/auth';
 import { colors, statusColors, glass } from '../../lib/theme';
+import { INSPECTION_PERIOD_MONTHS, MENU_MAX_HEIGHT, getErrorMessage } from '../../lib/constants';
 import GlassCard from '../../components/GlassCard';
 import GlassBackground from '../../components/GlassBackground';
 
@@ -37,8 +38,7 @@ export default function VehicleDetailScreen() {
         setSelectedReason(vehicleRes.data.reason_for_rejection || '');
       }
       if (reasonsRes.data) setRejectionReasons(reasonsRes.data);
-    } catch (error) {
-      console.error('Error:', error);
+    } catch {
       Alert.alert('Error', 'Failed to load vehicle');
       router.back();
     } finally {
@@ -66,7 +66,7 @@ export default function VehicleDetailScreen() {
 
       if (inspectionResult === 'verified') {
         const nextDate = new Date();
-        nextDate.setMonth(nextDate.getMonth() + 3);
+        nextDate.setMonth(nextDate.getMonth() + INSPECTION_PERIOD_MONTHS);
         updateData.next_inspection_date = nextDate.toISOString().split('T')[0];
         updateData.expected_status = 'verified';
       } else {
@@ -78,8 +78,8 @@ export default function VehicleDetailScreen() {
 
       Alert.alert('Success', `Vehicle ${inspectionResult === 'verified' ? 'verified' : 'rejected'} successfully`);
       router.back();
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to submit inspection');
+    } catch (err) {
+      Alert.alert('Error', getErrorMessage(err, 'Failed to submit inspection'));
     } finally {
       setSaving(false);
     }
@@ -130,7 +130,7 @@ export default function VehicleDetailScreen() {
             </View>
             <View style={styles.headerInfo}>
               <Text style={styles.plateNumber}>{vehicle.plate_number}</Text>
-              <Text style={styles.equipmentType}>{eq.label} ({vehicle.equipment_category})</Text>
+              <Text style={styles.equipmentType}>{eq.label} - {getCategoryDisplay(vehicle.equipment_category)}</Text>
               <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
                 <MaterialCommunityIcons name={sc.icon} size={14} color={sc.text} />
                 <Text style={[styles.statusText, { color: sc.text }]}>

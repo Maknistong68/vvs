@@ -17,10 +17,12 @@ import {
   EQUIPMENT_TYPES,
   REJECTION_CATEGORIES,
   getEquipmentTypeConfig,
+  getCategoryDisplay,
   getStatusColor,
 } from '../../lib/supabase';
 import { useAuth, useIsOwner } from '../../lib/auth';
 import { colors, glass, roleColors } from '../../lib/theme';
+import { MENU_MAX_HEIGHT, DIALOG_MAX_HEIGHT, getErrorMessage } from '../../lib/constants';
 import GlassCard from '../../components/GlassCard';
 import GlassBackground from '../../components/GlassBackground';
 
@@ -93,8 +95,8 @@ export default function AdminScreen() {
       if (r.data) setRejectionReasons(r.data);
       if (u.data) setUsers(u.data);
       if (c.data) setCompanies(c.data);
-    } catch (err) {
-      console.error(err);
+    } catch {
+      // Silently handle fetch errors - user can navigate away and back to retry
     } finally {
       setLoading(false);
     }
@@ -145,7 +147,7 @@ export default function AdminScreen() {
       if (error) throw error;
       setVehicleDialog(false);
       fetchData();
-    } catch (err: any) { Alert.alert('Error', err.message || 'Failed to save'); }
+    } catch (err) { Alert.alert('Error', getErrorMessage(err, 'Failed to save')); }
     finally { setSaving(false); }
   };
 
@@ -157,7 +159,7 @@ export default function AdminScreen() {
         const { error } = await supabase.from('vehicles_equipment').delete().eq('id', id);
         if (error) throw error;
         fetchData();
-      } catch (err: any) { Alert.alert('Error', err.message); }
+      } catch (err) { Alert.alert('Error', getErrorMessage(err)); }
       finally { setDeleting(null); }
     }},
   ]);
@@ -181,7 +183,7 @@ export default function AdminScreen() {
       if (error) throw error;
       setProjectDialog(false);
       fetchData();
-    } catch (err: any) { Alert.alert('Error', err.message); }
+    } catch (err) { Alert.alert('Error', getErrorMessage(err)); }
     finally { setSaving(false); }
   };
 
@@ -193,7 +195,7 @@ export default function AdminScreen() {
         const { error } = await supabase.from('projects').delete().eq('id', id);
         if (error) throw error;
         fetchData();
-      } catch (err: any) { Alert.alert('Error', err.message); }
+      } catch (err) { Alert.alert('Error', getErrorMessage(err)); }
       finally { setDeleting(null); }
     }},
   ]);
@@ -217,7 +219,7 @@ export default function AdminScreen() {
       if (error) throw error;
       setGateDialog(false);
       fetchData();
-    } catch (err: any) { Alert.alert('Error', err.message); }
+    } catch (err) { Alert.alert('Error', getErrorMessage(err)); }
     finally { setSaving(false); }
   };
 
@@ -229,7 +231,7 @@ export default function AdminScreen() {
         const { error } = await supabase.from('gates').delete().eq('id', id);
         if (error) throw error;
         fetchData();
-      } catch (err: any) { Alert.alert('Error', err.message); }
+      } catch (err) { Alert.alert('Error', getErrorMessage(err)); }
       finally { setDeleting(null); }
     }},
   ]);
@@ -253,7 +255,7 @@ export default function AdminScreen() {
       if (error) throw error;
       setReasonDialog(false);
       fetchData();
-    } catch (err: any) { Alert.alert('Error', err.message); }
+    } catch (err) { Alert.alert('Error', getErrorMessage(err)); }
     finally { setSaving(false); }
   };
 
@@ -265,7 +267,7 @@ export default function AdminScreen() {
         const { error } = await supabase.from('rejection_reasons').delete().eq('id', id);
         if (error) throw error;
         fetchData();
-      } catch (err: any) { Alert.alert('Error', err.message); }
+      } catch (err) { Alert.alert('Error', getErrorMessage(err)); }
       finally { setDeleting(null); }
     }},
   ]);
@@ -288,7 +290,7 @@ export default function AdminScreen() {
       if (error) throw error;
       setCompanyDialog(false);
       fetchData();
-    } catch (err: any) { Alert.alert('Error', err.message); }
+    } catch (err) { Alert.alert('Error', getErrorMessage(err)); }
     finally { setSaving(false); }
   };
 
@@ -299,7 +301,7 @@ export default function AdminScreen() {
       const { error } = await supabase.from('users').update({ role: newRole }).eq('id', u.id);
       if (error) throw error;
       fetchData();
-    } catch (err: any) { Alert.alert('Error', err.message); }
+    } catch (err) { Alert.alert('Error', getErrorMessage(err)); }
   };
 
   // Tab component
@@ -322,7 +324,7 @@ export default function AdminScreen() {
           </View>
           <View style={styles.info}>
             <Text style={styles.name}>{item.plate_number}</Text>
-            <Text style={styles.sub}>{tc.label} - ({item.equipment_category})</Text>
+            <Text style={styles.sub}>{tc.label} - {getCategoryDisplay(item.equipment_category)}</Text>
             {item.driver_name && (
               <View style={styles.detailRow}>
                 <MaterialCommunityIcons name="account" size={12} color={colors.textMuted} />
