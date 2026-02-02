@@ -5,7 +5,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../lib/auth';
 import { colors, gradients, glass } from '../../lib/theme';
-import { MIN_PASSWORD_LENGTH, EMAIL_REGEX } from '../../lib/constants';
+import { MIN_PASSWORD_LENGTH, EMAIL_REGEX, validatePassword, getPasswordRequirementsSummary } from '../../lib/constants';
+import { logger } from '../../lib/logger';
 import GlassCard from '../../components/GlassCard';
 import GlassBackground from '../../components/GlassBackground';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -26,11 +27,25 @@ export default function LoginScreen() {
   const validateEmail = (emailValue: string) => EMAIL_REGEX.test(emailValue);
 
   const handleSubmit = async () => {
-    if (!email || !password) { setError('Fill all fields'); return; }
+    // Basic field validation
+    if (!email || !password) { setError('Please fill in all fields'); return; }
     if (!validateEmail(email)) { setError('Please enter a valid email address'); return; }
-    if (password.length < MIN_PASSWORD_LENGTH) { setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`); return; }
-    if (!isLogin && !fullName) { setError('Enter your name'); return; }
-    if (!isLogin && !companyCode) { setError('Enter company code'); return; }
+
+    // Password validation - different rules for login vs signup
+    if (isLogin) {
+      // For login, just check minimum length (legacy support)
+      if (password.length < 6) { setError('Invalid password'); return; }
+    } else {
+      // For signup, enforce strong password requirements
+      const passwordValidation = validatePassword(password);
+      if (!passwordValidation.isValid) {
+        setError(passwordValidation.errors[0]); // Show first error
+        return;
+      }
+    }
+
+    if (!isLogin && !fullName.trim()) { setError('Please enter your name'); return; }
+    if (!isLogin && !companyCode.trim()) { setError('Please enter your company code'); return; }
 
     setLoading(true);
     setError(null);
@@ -38,14 +53,24 @@ export default function LoginScreen() {
 
     try {
       if (isLogin) {
+        logger.logUserAction('sign_in_attempt', { email });
         const { error } = await signIn(email, password);
-        if (error) setError(error.message);
-        else router.replace('/(tabs)');
+        if (error) {
+          logger.error('Sign in failed', error, { email });
+          setError(error.message);
+        } else {
+          logger.logUserAction('sign_in_success', { email });
+          router.replace('/(tabs)');
+        }
       } else {
-        const { error } = await signUp(email, password, fullName, companyCode);
-        if (error) setError(error.message);
-        else {
-          setSuccess('Account created! Check email then login.');
+        logger.logUserAction('sign_up_attempt', { email, companyCode });
+        const { error } = await signUp(email, password, fullName.trim(), companyCode.trim());
+        if (error) {
+          logger.error('Sign up failed', error, { email });
+          setError(error.message);
+        } else {
+          logger.logUserAction('sign_up_success', { email });
+          setSuccess('Account created! Please check your email to verify, then log in.');
           setIsLogin(true);
           setEmail('');
           setPassword('');
@@ -53,8 +78,12 @@ export default function LoginScreen() {
           setCompanyCode('');
         }
       }
-    } catch { setError('An error occurred'); }
-    finally { setLoading(false); }
+    } catch (err) {
+      logger.error('Authentication error', err);
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -139,7 +168,14 @@ export default function LoginScreen() {
               activeOutlineColor={colors.primary}
               textColor={colors.textPrimary}
               theme={{ colors: { onSurfaceVariant: colors.textMuted } }}
+              accessibilityLabel="Password input"
+              accessibilityHint={!isLogin ? getPasswordRequirementsSummary() : undefined}
             />
+            {!isLogin && (
+              <Text style={styles.passwordHint}>
+                {getPasswordRequirementsSummary()}
+              </Text>
+            )}
 
             {error && <HelperText type="error" visible style={styles.error}>{error}</HelperText>}
             {success && <HelperText type="info" visible style={styles.success}>{success}</HelperText>}
@@ -236,6 +272,13 @@ const styles = StyleSheet.create({
   },
   error: { color: colors.error, fontSize: 13 },
   success: { color: colors.success, fontSize: 13 },
+  passwordHint: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginTop: -8,
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
   btnWrap: {
     marginTop: 16,
     borderRadius: glass.border.radius.md,

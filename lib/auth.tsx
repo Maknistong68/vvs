@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase, User, UserRole, Company } from './supabase';
 import { AUTH_TIMEOUT_MS, getErrorMessage } from './constants';
@@ -185,17 +185,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSession(null);
   };
 
-  const value = {
-    session,
-    user,
-    company,
-    role: user?.role ?? null,
-    loading,
-    signIn,
-    signUp,
-    signOut,
-    refreshUser,
-  };
+  // Memoize context value to prevent unnecessary re-renders of consumers
+  const value = useMemo(
+    () => ({
+      session,
+      user,
+      company,
+      role: user?.role ?? null,
+      loading,
+      signIn,
+      signUp,
+      signOut,
+      refreshUser,
+    }),
+    [session, user, company, loading, signIn, signUp, signOut, refreshUser]
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

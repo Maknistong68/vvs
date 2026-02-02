@@ -2,15 +2,25 @@ import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 
-// Supabase configuration - Use environment variables in production
+// Supabase configuration - Environment variables are REQUIRED
 // Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in your .env file
-// Or configure in app.json under "extra" for Expo
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://uilphshemrrzeuyxzjml.supabase.co';
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVpbHBoc2hlbXJyemV1eXh6am1sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk4NTU0NzUsImV4cCI6MjA4NTQzMTQ3NX0.rDx7Hv1CwEZ6GvAFZvIEYi-2YICWpOIYxTF99jzIOUA';
+// SECURITY: Never hardcode credentials - always use environment variables
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-// Validate configuration
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  throw new Error('Missing Supabase configuration. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY environment variables.');
+// Validate configuration - fail fast if credentials are missing
+if (!SUPABASE_URL) {
+  throw new Error(
+    'Missing EXPO_PUBLIC_SUPABASE_URL environment variable. ' +
+    'Create a .env file with your Supabase project URL.'
+  );
+}
+
+if (!SUPABASE_ANON_KEY) {
+  throw new Error(
+    'Missing EXPO_PUBLIC_SUPABASE_ANON_KEY environment variable. ' +
+    'Create a .env file with your Supabase anonymous key.'
+  );
 }
 
 // Check if we're running on server (SSR) or client

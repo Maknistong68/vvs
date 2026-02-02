@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { View, StyleSheet, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, glass } from '../lib/theme';
@@ -7,11 +7,12 @@ const { width, height } = Dimensions.get('window');
 
 interface GlassBackgroundProps {
   children: React.ReactNode;
+  testID?: string;
 }
 
-export default function GlassBackground({ children }: GlassBackgroundProps) {
+function GlassBackground({ children, testID }: GlassBackgroundProps) {
   return (
-    <View style={styles.container}>
+    <View style={styles.container} testID={testID}>
       <LinearGradient
         colors={['#0F172A', '#1E293B']}
         style={styles.gradient}
@@ -19,10 +20,10 @@ export default function GlassBackground({ children }: GlassBackgroundProps) {
         end={{ x: 1, y: 1 }}
       />
 
-      {/* Decorative orbs */}
-      <View style={[styles.orb, styles.orbPrimary]} />
-      <View style={[styles.orb, styles.orbSecondary]} />
-      <View style={[styles.orb, styles.orbAccent]} />
+      {/* Decorative orbs - hidden from accessibility tree */}
+      <View style={[styles.orb, styles.orbPrimary]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" />
+      <View style={[styles.orb, styles.orbSecondary]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" />
+      <View style={[styles.orb, styles.orbAccent]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" />
 
       {/* Content */}
       <View style={styles.content}>
@@ -31,6 +32,9 @@ export default function GlassBackground({ children }: GlassBackgroundProps) {
     </View>
   );
 }
+
+// Memoize - only re-render when children change
+export default memo(GlassBackground);
 
 const styles = StyleSheet.create({
   container: {

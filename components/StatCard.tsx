@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo, useMemo } from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
 import { Text } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,13 +11,39 @@ interface StatCardProps {
   icon: string;
   color: string;
   gradient?: string[];
+  testID?: string;
 }
 
-export default function StatCard({ title, value, icon, color, gradient }: StatCardProps) {
-  const cardGradient = gradient || [`${color}15`, `${color}05`];
+function StatCard({ title, value, icon, color, gradient, testID }: StatCardProps) {
+  // Memoize computed values
+  const cardGradient = useMemo(
+    () => gradient || [`${color}15`, `${color}05`],
+    [gradient, color]
+  );
+
+  const iconWrapStyle = useMemo(
+    () => [styles.iconWrap, { backgroundColor: `${color}20` }],
+    [color]
+  );
+
+  const iconGlowStyle = useMemo(
+    () => [styles.iconGlow, { backgroundColor: `${color}30` }],
+    [color]
+  );
+
+  const valueStyle = useMemo(
+    () => [styles.value, { color }],
+    [color]
+  );
 
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+      testID={testID}
+      accessible={true}
+      accessibilityLabel={`${title}: ${value}`}
+      accessibilityRole="text"
+    >
       <LinearGradient
         colors={['rgba(30, 41, 59, 0.6)', 'rgba(30, 41, 59, 0.4)']}
         style={styles.baseGradient}
@@ -31,16 +57,19 @@ export default function StatCard({ title, value, icon, color, gradient }: StatCa
         end={{ x: 1, y: 1 }}
       />
       <View style={styles.content}>
-        <View style={[styles.iconWrap, { backgroundColor: `${color}20` }]}>
-          <View style={[styles.iconGlow, { backgroundColor: `${color}30` }]} />
-          <MaterialCommunityIcons name={icon} size={24} color={color} />
+        <View style={iconWrapStyle}>
+          <View style={iconGlowStyle} />
+          <MaterialCommunityIcons name={icon} size={24} color={color} accessibilityElementsHidden />
         </View>
-        <Text style={[styles.value, { color }]}>{value}</Text>
-        <Text style={styles.title}>{title}</Text>
+        <Text style={valueStyle} accessibilityElementsHidden>{value}</Text>
+        <Text style={styles.title} accessibilityElementsHidden>{title}</Text>
       </View>
     </View>
   );
 }
+
+// Memoize component - only re-render when props change
+export default memo(StatCard);
 
 const styles = StyleSheet.create({
   container: {

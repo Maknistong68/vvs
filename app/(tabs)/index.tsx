@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { View, StyleSheet, ScrollView, RefreshControl, StatusBar, TouchableOpacity, FlatList } from 'react-native';
 import { Text, ActivityIndicator, Searchbar } from 'react-native-paper';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { supabase, DashboardStats, EQUIPMENT_TYPES, VehicleEquipment, getEquipmentTypeConfig, getCategoryDisplay } from '../../lib/supabase';
-import { getErrorMessage } from '../../lib/constants';
+import { EQUIPMENT_TYPES, VehicleEquipment, getEquipmentTypeConfig, getCategoryDisplay } from '../../lib/supabase';
 import { useAuth, useIsContractor } from '../../lib/auth';
 import { colors, statusColors, glass, roleColors } from '../../lib/theme';
+import { useDashboardStats, useEquipmentTypeBreakdown, useVehicles } from '../../lib/hooks';
 import GlassCard from '../../components/GlassCard';
 import GlassBackground from '../../components/GlassBackground';
 import StatCard from '../../components/StatCard';
@@ -13,116 +13,74 @@ import StatCard from '../../components/StatCard';
 export default function DashboardScreen() {
   const { user, company, loading: authLoading } = useAuth();
   const { isContractor, loading: contractorLoading } = useIsContractor();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [stats, setStats] = useState<DashboardStats>({
-    total: 0, verified: 0, rejected: 0, pending: 0, overdue: 0, blacklisted: 0
-  });
-  const [refreshing, setRefreshing] = useState(false);
-  const [topEquipment, setTopEquipment] = useState<{type: string; count: number}[]>([]);
-  const [contractorVehicles, setContractorVehicles] = useState<VehicleEquipment[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredVehicles, setFilteredVehicles] = useState<VehicleEquipment[]>([]);
 
-  const fetchData = async () => {
-    try {
-      setError(null);
+  // Use React Query hooks for data fetching with caching
+  const companyId = isContractor ? company?.id : undefined;
 
-      if (isContractor && company?.id) {
-        // Contractor: Fetch only their company's equipment
-        const { data: vehicles, error: vehicleError } = await supabase
-          .from('vehicles_equipment')
-          .select('*')
-          .eq('company_id', company.id)
-          .order('plate_number');
+  // Fetch dashboard stats - single optimized query instead of 6+ queries
+  const {
+    data: stats = { total: 0, verified: 0, rejected: 0, pending: 0, overdue: 0, blacklisted: 0 },
+    isLoading: statsLoading,
+    error: statsError,
+    refetch: refetchStats,
+  } = useDashboardStats(companyId);
 
-        if (vehicleError) {
-          setError(vehicleError.message);
-        } else if (vehicles) {
-          setContractorVehicles(vehicles);
-          // Calculate stats for contractor
-          setStats({
-            total: vehicles.length,
-            verified: vehicles.filter(v => v.actual_status === 'verified').length,
-            rejected: vehicles.filter(v => v.actual_status === 'rejected').length,
-            pending: vehicles.filter(v => v.actual_status === 'pending').length,
-            overdue: vehicles.filter(v => v.next_inspection_date && new Date(v.next_inspection_date) < new Date()).length,
-            blacklisted: vehicles.filter(v => v.is_blacklisted).length,
-          });
-        }
-      } else {
-        // Admin/Owner/Inspector: Fetch all stats
-        const [totalRes, verifiedRes, rejectedRes, pendingRes, overdueRes, blacklistedRes] = await Promise.all([
-          supabase.from('vehicles_equipment').select('*', { count: 'exact', head: true }),
-          supabase.from('vehicles_equipment').select('*', { count: 'exact', head: true }).eq('actual_status', 'verified'),
-          supabase.from('vehicles_equipment').select('*', { count: 'exact', head: true }).eq('actual_status', 'rejected'),
-          supabase.from('vehicles_equipment').select('*', { count: 'exact', head: true }).eq('actual_status', 'pending'),
-          supabase.from('vehicles_equipment').select('*', { count: 'exact', head: true }).lt('next_inspection_date', new Date().toISOString().split('T')[0]),
-          supabase.from('vehicles_equipment').select('*', { count: 'exact', head: true }).eq('is_blacklisted', true),
-        ]);
+  // Fetch equipment type breakdown (only for non-contractors)
+  const {
+    data: topEquipment = [],
+    refetch: refetchEquipment,
+  } = useEquipmentTypeBreakdown(isContractor ? undefined : companyId);
 
-        if (totalRes.error) {
-          setError(totalRes.error.message);
-        } else {
-          setStats({
-            total: totalRes.count || 0,
-            verified: verifiedRes.count || 0,
-            rejected: rejectedRes.count || 0,
-            pending: pendingRes.count || 0,
-            overdue: overdueRes.count || 0,
-            blacklisted: blacklistedRes.count || 0,
-          });
-        }
+  // Fetch contractor vehicles (only for contractors)
+  const {
+    data: vehiclesData,
+    isLoading: vehiclesLoading,
+    error: vehiclesError,
+    refetch: refetchVehicles,
+  } = useVehicles({
+    companyId: company?.id,
+    pageSize: 100, // Get all for contractor view
+  });
 
-        // Fetch equipment type breakdown
-        const { data: vehicles } = await supabase
-          .from('vehicles_equipment')
-          .select('equipment_type');
+  const contractorVehicles = vehiclesData?.vehicles || [];
 
-        if (vehicles) {
-          const typeCounts: Record<string, number> = {};
-          vehicles.forEach(v => {
-            typeCounts[v.equipment_type] = (typeCounts[v.equipment_type] || 0) + 1;
-          });
-          const sorted = Object.entries(typeCounts)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 5)
-            .map(([type, count]) => ({ type, count }));
-          setTopEquipment(sorted);
-        }
-      }
-    } catch (err) {
-      setError(getErrorMessage(err, 'Unknown error'));
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!authLoading && !contractorLoading) {
-      fetchData();
-    }
-  }, [authLoading, contractorLoading, isContractor, company?.id]);
-
-  // Filter vehicles based on search query
-  useEffect(() => {
-    if (!searchQuery) {
-      setFilteredVehicles(contractorVehicles);
-    } else {
-      const q = searchQuery.toLowerCase();
-      setFilteredVehicles(contractorVehicles.filter((v) =>
-        v.plate_number?.toLowerCase().includes(q) ||
-        v.driver_name?.toLowerCase().includes(q) ||
-        v.client_company?.toLowerCase().includes(q)
-      ));
-    }
+  // Memoized filtered vehicles for search
+  const filteredVehicles = useMemo(() => {
+    if (!searchQuery) return contractorVehicles;
+    const q = searchQuery.toLowerCase();
+    return contractorVehicles.filter((v) =>
+      v.plate_number?.toLowerCase().includes(q) ||
+      v.driver_name?.toLowerCase().includes(q) ||
+      v.client_company?.toLowerCase().includes(q)
+    );
   }, [contractorVehicles, searchQuery]);
+
+  // Combined loading state
+  const loading = authLoading || contractorLoading || statsLoading || (isContractor && vehiclesLoading);
+  const error = statsError?.message || vehiclesError?.message || null;
+
+  // Refresh handler
+  const handleRefresh = useCallback(() => {
+    refetchStats();
+    if (isContractor) {
+      refetchVehicles();
+    } else {
+      refetchEquipment();
+    }
+  }, [isContractor, refetchStats, refetchVehicles, refetchEquipment]);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await handleRefresh();
+    setRefreshing(false);
+  }, [handleRefresh]);
 
   const displayName = user?.full_name || user?.email?.split('@')[0] || 'User';
   const roleColor = roleColors[user?.role || 'inspector'];
 
-  if (authLoading || contractorLoading || loading) {
+  if (loading) {
     return (
       <GlassBackground>
         <View style={styles.loading}>
@@ -196,7 +154,7 @@ export default function DashboardScreen() {
             <GlassCard style={styles.errorCard} padding={20}>
               <MaterialCommunityIcons name="alert-circle" size={32} color={colors.error} />
               <Text style={styles.errorText}>{error}</Text>
-              <TouchableOpacity onPress={fetchData} style={styles.retryBtn}>
+              <TouchableOpacity onPress={handleRefresh} style={styles.retryBtn} accessibilityRole="button" accessibilityLabel="Retry loading data">
                 <Text style={styles.retryText}>Tap to Retry</Text>
               </TouchableOpacity>
             </GlassCard>
@@ -271,10 +229,16 @@ export default function DashboardScreen() {
                 refreshControl={
                   <RefreshControl
                     refreshing={refreshing}
-                    onRefresh={() => { setRefreshing(true); fetchData(); }}
+                    onRefresh={onRefresh}
                     tintColor={colors.primary}
                   />
                 }
+                // Performance optimizations
+                initialNumToRender={10}
+                maxToRenderPerBatch={10}
+                updateCellsBatchingPeriod={50}
+                windowSize={10}
+                removeClippedSubviews={true}
                 ListEmptyComponent={
                   <GlassCard style={styles.empty} padding={32}>
                     <MaterialCommunityIcons name="car-off" size={48} color={colors.textMuted} />
@@ -298,7 +262,7 @@ export default function DashboardScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => { setRefreshing(true); fetchData(); }}
+            onRefresh={onRefresh}
             tintColor={colors.primary}
           />
         }
@@ -322,7 +286,7 @@ export default function DashboardScreen() {
           <GlassCard variant="error" style={styles.errorCard} padding={20}>
             <MaterialCommunityIcons name="alert-circle" size={32} color={colors.error} />
             <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity onPress={fetchData} style={styles.retryBtn}>
+            <TouchableOpacity onPress={handleRefresh} style={styles.retryBtn} accessibilityRole="button" accessibilityLabel="Retry loading data">
               <Text style={styles.retryText}>Tap to Retry</Text>
             </TouchableOpacity>
           </GlassCard>

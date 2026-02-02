@@ -58,6 +58,7 @@ export default function TabsLayout() {
           name="index"
           options={{
             tabBarLabel: 'Home',
+            tabBarAccessibilityLabel: 'Home Dashboard',
             tabBarIcon: ({ color, size }) => (
               <MaterialCommunityIcons name="view-dashboard" color={color} size={size} />
             ),
@@ -67,6 +68,7 @@ export default function TabsLayout() {
           name="inspections"
           options={{
             tabBarLabel: 'Inspect',
+            tabBarAccessibilityLabel: 'Vehicle Inspections',
             tabBarIcon: ({ color, size }) => (
               <MaterialCommunityIcons name="clipboard-check" color={color} size={size} />
             ),
@@ -77,6 +79,7 @@ export default function TabsLayout() {
           name="admin"
           options={{
             tabBarLabel: 'Manage',
+            tabBarAccessibilityLabel: 'Admin Management',
             tabBarIcon: ({ color, size }) => (
               <MaterialCommunityIcons name="cog" color={color} size={size} />
             ),
@@ -87,6 +90,7 @@ export default function TabsLayout() {
           name="settings"
           options={{
             tabBarLabel: 'Profile',
+            tabBarAccessibilityLabel: 'User Profile Settings',
             tabBarIcon: ({ color, size }) => (
               <MaterialCommunityIcons name="account-circle" color={color} size={size} />
             ),
