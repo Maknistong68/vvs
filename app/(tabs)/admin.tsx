@@ -305,12 +305,21 @@ export default function AdminScreen() {
   };
 
   // Tab component
-  const Tab = ({ value, label, icon }: { value: TabValue; label: string; icon: string }) => (
-    <GlassCard onPress={() => setActiveTab(value)} style={[styles.tab, activeTab === value && styles.tabActive]} padding={10}>
-      <MaterialCommunityIcons name={icon as any} size={18} color={activeTab === value ? colors.primary : colors.textMuted} />
-      <Text style={[styles.tabText, activeTab === value && styles.tabTextActive]}>{label}</Text>
-    </GlassCard>
-  );
+  const Tab = ({ value, label, icon }: { value: TabValue; label: string; icon: string }) => {
+    const isActive = activeTab === value;
+    return (
+      <GlassCard
+        onPress={() => setActiveTab(value)}
+        style={isActive ? { ...styles.tab, ...styles.tabActive } : styles.tab}
+        padding={10}
+        accessibilityRole="tab"
+        accessibilityLabel={label}
+      >
+        <MaterialCommunityIcons name={icon as any} size={18} color={isActive ? colors.primary : colors.textMuted} />
+        <Text style={isActive ? { ...styles.tabText, ...styles.tabTextActive } : styles.tabText}>{label}</Text>
+      </GlassCard>
+    );
+  };
 
   // List items
   const VehicleItem = ({ item }: { item: VehicleEquipment }) => {

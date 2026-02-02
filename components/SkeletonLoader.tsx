@@ -2,13 +2,13 @@
 // Provides placeholder loading UI for better perceived performance
 
 import React, { memo, useEffect, useRef } from 'react';
-import { View, StyleSheet, Animated, ViewStyle, Dimensions } from 'react-native';
+import { View, StyleSheet, Animated, ViewStyle, Dimensions, DimensionValue } from 'react-native';
 import { colors, glass } from '../lib/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface SkeletonProps {
-  width?: number | string;
+  width?: DimensionValue;
   height?: number;
   borderRadius?: number;
   style?: ViewStyle;
@@ -47,11 +47,11 @@ function SkeletonBase({ width = '100%', height = 20, borderRadius = 4, style }: 
       style={[
         styles.skeleton,
         {
-          width: typeof width === 'number' ? width : width,
+          width,
           height,
           borderRadius,
           opacity,
-        },
+        } as ViewStyle,
         style,
       ]}
     />
@@ -187,7 +187,7 @@ function ProfileSkeletonBase() {
       {/* Avatar */}
       <View style={styles.profileHeader}>
         <Skeleton width={100} height={100} borderRadius={50} />
-        <Skeleton width={150} height={24} style={[styles.mt16, styles.mb4]} />
+        <Skeleton width={150} height={24} style={styles.mt16mb4} />
         <Skeleton width={200} height={14} />
       </View>
 
@@ -334,6 +334,7 @@ const styles = StyleSheet.create({
   mb8: { marginBottom: 8 },
   mb12: { marginBottom: 12 },
   mt16: { marginTop: 16 },
+  mt16mb4: { marginTop: 16, marginBottom: 4 },
 });
 
 export default {
