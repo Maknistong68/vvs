@@ -342,12 +342,14 @@ export default function AdminScreen() {
     <GlassCard
       onPress={onPress}
       style={isActive ? { ...styles.tab, ...styles.tabActive } : styles.tab}
-      padding={10}
+      padding={8}
       accessibilityRole="tab"
       accessibilityLabel={label}
     >
-      <MaterialCommunityIcons name={icon as any} size={18} color={isActive ? colors.primary : colors.textMuted} />
-      <Text style={isActive ? { ...styles.tabText, ...styles.tabTextActive } : styles.tabText}>{label}</Text>
+      <View style={styles.tabInner}>
+        <MaterialCommunityIcons name={icon as any} size={16} color={isActive ? colors.primary : colors.textMuted} />
+        <Text style={isActive ? { ...styles.tabText, ...styles.tabTextActive } : styles.tabText}>{label}</Text>
+      </View>
     </GlassCard>
   ));
 
@@ -762,8 +764,9 @@ const styles = StyleSheet.create({
   title: { color: colors.textPrimary, fontSize: 26, fontWeight: 'bold' },
   tabs: { marginBottom: 8 },
   tabsContent: { paddingHorizontal: 8 },
-  tab: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 2, gap: 6, marginVertical: 0 },
+  tab: { marginHorizontal: 2, marginVertical: 0 },
   tabActive: { borderWidth: 1, borderColor: colors.primary },
+  tabInner: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   tabText: { color: colors.textMuted, fontSize: 12, fontWeight: '500' },
   tabTextActive: { color: colors.primary },
   tabDivider: { width: 1, height: 24, backgroundColor: glass.border.color, marginHorizontal: 4, alignSelf: 'center' },
