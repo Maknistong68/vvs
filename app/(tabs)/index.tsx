@@ -287,7 +287,7 @@ export default function DashboardScreen() {
       return {
         label: 'BLACKLISTED',
         color: colors.error,
-        bgColor: `${colors.error}20`,
+        bgColor: `${colors.error}30`,
         icon: 'cancel',
       };
     }
@@ -296,14 +296,14 @@ export default function DashboardScreen() {
         return {
           label: 'VERIFIED',
           color: colors.success,
-          bgColor: `${colors.success}20`,
+          bgColor: `${colors.success}30`,
           icon: 'check-circle',
         };
       case 'rejected':
         return {
           label: 'REJECTED',
           color: colors.error,
-          bgColor: `${colors.error}20`,
+          bgColor: `${colors.error}30`,
           icon: 'close-circle',
         };
       case 'pending':
@@ -311,7 +311,7 @@ export default function DashboardScreen() {
         return {
           label: 'PENDING',
           color: colors.warning,
-          bgColor: `${colors.warning}20`,
+          bgColor: `${colors.warning}30`,
           icon: 'clock-outline',
         };
     }
