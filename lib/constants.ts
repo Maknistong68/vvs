@@ -1,7 +1,7 @@
 // VVS Application Constants
 
 // Authentication
-export const AUTH_TIMEOUT_MS = 5000;
+export const AUTH_TIMEOUT_MS = 2000;
 export const MIN_PASSWORD_LENGTH = 12;
 export const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes inactivity timeout
 

@@ -3,10 +3,12 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { PaperProvider } from 'react-native-paper';
 import { AuthProvider, useAuth } from '../lib/auth';
 import { QueryProvider } from '../lib/queryClient';
-import { View, ActivityIndicator, StyleSheet, Text } from 'react-native';
+import { View, StyleSheet, Text } from 'react-native';
 import { paperTheme, colors } from '../lib/theme';
 import ErrorBoundary from '../components/ErrorBoundary';
-import NetworkStatusBar from '../components/NetworkStatusBar';
+import ToastProvider from '../components/ToastProvider';
+import { DashboardSkeleton } from '../components/SkeletonLoader';
+import GlassBackground from '../components/GlassBackground';
 import { setupGlobalErrorHandlers, logger } from '../lib/logger';
 
 function RootLayoutNav() {
@@ -23,16 +25,14 @@ function RootLayoutNav() {
 
   if (loading) {
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
+      <GlassBackground>
+        <DashboardSkeleton />
+      </GlassBackground>
     );
   }
 
   return (
     <View style={styles.container}>
-      <NetworkStatusBar />
       <Stack
         screenOptions={{
           headerShown: false,
@@ -68,7 +68,9 @@ export default function RootLayout() {
       <QueryProvider>
         <PaperProvider theme={paperTheme}>
           <AuthProvider>
-            <RootLayoutNav />
+            <ToastProvider>
+              <RootLayoutNav />
+            </ToastProvider>
           </AuthProvider>
         </PaperProvider>
       </QueryProvider>
@@ -80,16 +82,5 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-  },
-  loading: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.background,
-  },
-  loadingText: {
-    color: colors.textMuted,
-    marginTop: 12,
-    fontSize: 14,
   },
 });

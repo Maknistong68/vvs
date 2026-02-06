@@ -26,6 +26,15 @@ if (!SUPABASE_ANON_KEY) {
 // Check if we're running on server (SSR) or client
 const isServer = typeof window === 'undefined';
 
+// W17: Cache SecureStore module reference to avoid 3 separate require() calls
+let _secureStore: any = null;
+function getSecureStore() {
+  if (!_secureStore) {
+    _secureStore = require('expo-secure-store');
+  }
+  return _secureStore;
+}
+
 // Custom storage adapter that handles web, native, and SSR
 const StorageAdapter = {
   getItem: async (key: string): Promise<string | null> => {
@@ -41,8 +50,7 @@ const StorageAdapter = {
       }
     }
     // Native: use SecureStore
-    const SecureStore = require('expo-secure-store');
-    return SecureStore.getItemAsync(key);
+    return getSecureStore().getItemAsync(key);
   },
   setItem: async (key: string, value: string): Promise<void> => {
     if (isServer) return;
@@ -53,8 +61,7 @@ const StorageAdapter = {
       } catch {}
       return;
     }
-    const SecureStore = require('expo-secure-store');
-    await SecureStore.setItemAsync(key, value);
+    await getSecureStore().setItemAsync(key, value);
   },
   removeItem: async (key: string): Promise<void> => {
     if (isServer) return;
@@ -65,8 +72,7 @@ const StorageAdapter = {
       } catch {}
       return;
     }
-    const SecureStore = require('expo-secure-store');
-    await SecureStore.deleteItemAsync(key);
+    await getSecureStore().deleteItemAsync(key);
   },
 };
 
@@ -350,4 +356,49 @@ export function getExpectedStatusColor(status: ExpectedStatus): string {
     case 'updated_inspection_required': return '#F59E0B';
     default: return '#6B7280';
   }
+}
+
+// App Settings interface for owner control panel
+export interface AppSettings {
+  id: string;
+  company_id: string | null;
+  setting_key: string;
+  setting_value: Record<string, unknown>;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+// Setting keys enum for type safety
+export type SettingKey = 'dashboard_kpis' | 'companies_visible_to' | 'audit_enabled' | 'audit_retention_days';
+
+// KPI types that can be displayed on dashboard
+export type KpiType = 'verified' | 'pending' | 'rejected' | 'expired' | 'total' | 'blacklisted' | 'overdue';
+
+// Default KPI configuration
+export const DEFAULT_DASHBOARD_KPIS: KpiType[] = ['verified', 'pending', 'rejected', 'expired'];
+
+// KPI display configuration
+export const KPI_CONFIG: Record<KpiType, { label: string; icon: string; color: string }> = {
+  verified: { label: 'Verified', icon: 'check-circle', color: '#22C55E' },
+  pending: { label: 'Pending', icon: 'clock-outline', color: '#F59E0B' },
+  rejected: { label: 'Rejected', icon: 'close-circle', color: '#EF4444' },
+  expired: { label: 'Expired', icon: 'calendar-remove', color: '#EF4444' },
+  total: { label: 'Total', icon: 'car-multiple', color: '#3B82F6' },
+  blacklisted: { label: 'Blacklisted', icon: 'cancel', color: '#EF4444' },
+  overdue: { label: 'Overdue', icon: 'calendar-alert', color: '#F59E0B' },
+};
+
+// Audit Log interface for tracking changes
+export interface AuditLog {
+  id: string;
+  entity_type: 'vehicle' | 'user' | 'company' | 'settings';
+  entity_id: string;
+  action: 'status_change' | 'create' | 'update' | 'delete';
+  field_name: string | null;
+  old_value: string | null;
+  new_value: string | null;
+  changed_by: string | null;
+  changed_at: string;
+  company_id: string | null;
+  metadata: Record<string, unknown> | null;
 }

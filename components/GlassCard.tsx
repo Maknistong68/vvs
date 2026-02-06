@@ -1,7 +1,9 @@
 import React, { memo, useMemo } from 'react';
 import { View, StyleSheet, ViewStyle, Pressable, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { colors, glass } from '../lib/theme';
+import { hapticLight } from '../lib/haptics';
 
 type CardVariant = 'default' | 'elevated' | 'accent' | 'success' | 'error' | 'warning';
 
@@ -45,6 +47,9 @@ const variantColors: Record<CardVariant, { gradient: string[]; border: string }>
   },
 };
 
+// W19: Only apply blur on iOS where it performs well
+const ENABLE_BLUR = Platform.OS === 'ios';
+
 function GlassCard({
   children,
   style,
@@ -77,8 +82,17 @@ function GlassCard({
     [padding]
   );
 
+  const blurIntensity = elevated ? glass.blur.medium : glass.blur.light;
+
   const cardContent = (
     <View style={containerStyle} testID={testID}>
+      {ENABLE_BLUR && (
+        <BlurView
+          intensity={blurIntensity}
+          tint="dark"
+          style={[styles.gradient, { borderRadius }]}
+        />
+      )}
       <LinearGradient
         colors={variantConfig.gradient as [string, string]}
         style={gradientStyle}
@@ -92,9 +106,13 @@ function GlassCard({
   );
 
   if (onPress) {
+    const handlePress = () => {
+      hapticLight();
+      onPress();
+    };
     return (
       <Pressable
-        onPress={onPress}
+        onPress={handlePress}
         style={({ pressed }) => [pressed && styles.pressed]}
         accessible={true}
         accessibilityRole={accessibilityRole || 'button'}

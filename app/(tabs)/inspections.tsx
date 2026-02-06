@@ -1,24 +1,62 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, FlatList, RefreshControl, StatusBar, Alert, ScrollView } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { View, StyleSheet, FlatList, RefreshControl, StatusBar, ScrollView, TouchableOpacity } from 'react-native';
 import { Text, Searchbar, ActivityIndicator, SegmentedButtons, Dialog, Portal, Button, TextInput, Menu, RadioButton, FAB } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { supabase, VehicleEquipment, RejectionReason, EquipmentType, EQUIPMENT_TYPES, getEquipmentTypeConfig, getCategoryDisplay } from '../../lib/supabase';
+import { supabase, VehicleEquipment, RejectionReason, VehicleStatus, EquipmentType, EQUIPMENT_TYPES, getEquipmentTypeConfig, getCategoryDisplay } from '../../lib/supabase';
 import { useAuth, useCanAddVehicles } from '../../lib/auth';
 import { colors, statusColors, glass } from '../../lib/theme';
 import { INSPECTION_PERIOD_MONTHS, MENU_MAX_HEIGHT, getErrorMessage } from '../../lib/constants';
+import { useVehicles, useRejectionReasons, VehicleSortField } from '../../lib/hooks';
 import GlassCard from '../../components/GlassCard';
 import GlassBackground from '../../components/GlassBackground';
+import StatusBadge from '../../components/StatusBadge';
+import EmptyState from '../../components/EmptyState';
+import ErrorDisplay from '../../components/ErrorDisplay';
+import { VehicleListSkeleton } from '../../components/SkeletonLoader';
+import { useToast } from '../../components/ToastProvider';
 
 export default function InspectionsScreen() {
   const { user, company } = useAuth();
   const { canAddVehicles } = useCanAddVehicles();
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [vehicles, setVehicles] = useState<VehicleEquipment[]>([]);
-  const [filteredVehicles, setFilteredVehicles] = useState<VehicleEquipment[]>([]);
+  const insets = useSafeAreaInsets();
+  const toast = useToast();
+
+  // Search with debounce
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [rejectionReasons, setRejectionReasons] = useState<RejectionReason[]>([]);
+  const [sortBy, setSortBy] = useState<'plate_number' | 'last_inspection_date' | 'actual_status'>('plate_number');
+  const [sortMenu, setSortMenu] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim().toLowerCase());
+    }, 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [searchQuery]);
+
+  // W5: Use useVehicles hook with server-side filtering instead of unbounded fetch
+  const {
+    data: vehiclesData,
+    isLoading: loading,
+    error: vehiclesError,
+    refetch: refetchVehicles,
+  } = useVehicles({
+    status: statusFilter !== 'all' ? statusFilter as VehicleStatus : undefined,
+    search: debouncedSearch || undefined,
+    pageSize: 50,
+    sortBy,
+  });
+
+  const filteredVehicles = vehiclesData?.vehicles || [];
+
+  // W5: Use hook for rejection reasons instead of manual fetch
+  const { data: rejectionReasons = [] } = useRejectionReasons(company?.id);
+
+  const [refreshing, setRefreshing] = useState(false);
 
   // Inspection dialog
   const [inspectDialog, setInspectDialog] = useState(false);
@@ -39,44 +77,11 @@ export default function InspectionsScreen() {
   const [equipmentTypeMenu, setEquipmentTypeMenu] = useState(false);
   const [savingVehicle, setSavingVehicle] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const [vehiclesRes, reasonsRes] = await Promise.all([
-        supabase.from('vehicles_equipment').select('*').order('plate_number'),
-        supabase.from('rejection_reasons').select('*').eq('is_active', true).order('reason_text'),
-      ]);
-
-      if (!vehiclesRes.error && vehiclesRes.data) {
-        setVehicles(vehiclesRes.data);
-        setFilteredVehicles(vehiclesRes.data);
-      }
-
-      if (!reasonsRes.error && reasonsRes.data) {
-        setRejectionReasons(reasonsRes.data);
-      }
-    } catch {
-      // Silently handle fetch errors - user can pull to refresh
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  useEffect(() => {
-    let filtered = vehicles;
-    if (statusFilter !== 'all') filtered = filtered.filter((v) => v.actual_status === statusFilter);
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter((v) =>
-        v.plate_number?.toLowerCase().includes(q) ||
-        v.driver_name?.toLowerCase().includes(q) ||
-        v.client_company?.toLowerCase().includes(q)
-      );
-    }
-    setFilteredVehicles(filtered);
-  }, [vehicles, statusFilter, searchQuery]);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refetchVehicles();
+    setRefreshing(false);
+  }, [refetchVehicles]);
 
   const openInspection = (vehicle: VehicleEquipment) => {
     setSelectedVehicle(vehicle);
@@ -89,7 +94,7 @@ export default function InspectionsScreen() {
   const submitInspection = async () => {
     if (!selectedVehicle) return;
     if (inspectionResult === 'rejected' && !selectedReason) {
-      Alert.alert('Error', 'Please select a rejection reason');
+      toast.showError('Please select a rejection reason');
       return;
     }
 
@@ -121,11 +126,11 @@ export default function InspectionsScreen() {
 
       if (error) throw error;
 
-      Alert.alert('Success', `Vehicle ${inspectionResult === 'verified' ? 'verified' : 'rejected'} successfully`);
+      toast.showSuccess(`Vehicle ${inspectionResult === 'verified' ? 'verified' : 'rejected'} successfully`);
       setInspectDialog(false);
-      fetchData();
+      refetchVehicles();
     } catch (err) {
-      Alert.alert('Error', getErrorMessage(err, 'Failed to submit inspection'));
+      toast.showError(getErrorMessage(err, 'Failed to submit inspection'));
     } finally {
       setSubmitting(false);
     }
@@ -142,11 +147,11 @@ export default function InspectionsScreen() {
 
   const saveVehicle = async (openInspectionAfter: boolean = false) => {
     if (!vehicleForm.plate_number.trim()) {
-      Alert.alert('Error', 'Plate number is required');
+      toast.showError('Plate number is required');
       return;
     }
     if (!company?.id || !user?.id) {
-      Alert.alert('Error', 'Session expired. Please log in again.');
+      toast.showError('Session expired. Please log in again.');
       return;
     }
 
@@ -173,16 +178,16 @@ export default function InspectionsScreen() {
 
       if (error) throw error;
 
-      Alert.alert('Success', 'Vehicle added successfully');
+      toast.showSuccess('Vehicle added successfully');
       setAddVehicleDialog(false);
-      fetchData();
+      refetchVehicles();
 
       // Optionally open inspection dialog for the new vehicle
       if (openInspectionAfter && newVehicle) {
         setTimeout(() => openInspection(newVehicle), 300);
       }
     } catch (err) {
-      Alert.alert('Error', getErrorMessage(err, 'Failed to add vehicle'));
+      toast.showError(getErrorMessage(err, 'Failed to add vehicle'));
     } finally {
       setSavingVehicle(false);
     }
@@ -219,17 +224,9 @@ export default function InspectionsScreen() {
             )}
           </View>
           <View>
-            <View style={[styles.badge, { backgroundColor: sc.bg }]}>
-              <MaterialCommunityIcons name={sc.icon} size={12} color={sc.text} />
-              <Text style={[styles.badgeText, { color: sc.text }]}>
-                {item.actual_status.charAt(0).toUpperCase() + item.actual_status.slice(1)}
-              </Text>
-            </View>
+            <StatusBadge status={item.actual_status} />
             {isOverdue && (
-              <View style={[styles.badge, { backgroundColor: `${colors.error}15`, marginTop: 4 }]}>
-                <MaterialCommunityIcons name="calendar-alert" size={12} color={colors.error} />
-                <Text style={[styles.badgeText, { color: colors.error }]}>Overdue</Text>
-              </View>
+              <StatusBadge status="inspection_overdue" label="Overdue" style={{ marginTop: 4 }} />
             )}
           </View>
         </View>
@@ -246,8 +243,8 @@ export default function InspectionsScreen() {
   if (loading) {
     return (
       <GlassBackground>
-        <View style={styles.loading}>
-          <ActivityIndicator size="large" color={colors.primary} />
+        <View style={{ paddingTop: insets.top + 16 }}>
+          <VehicleListSkeleton count={6} />
         </View>
       </GlassBackground>
     );
@@ -256,10 +253,19 @@ export default function InspectionsScreen() {
   return (
     <GlassBackground>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <Text style={styles.title}>Inspections</Text>
         <Text style={styles.subtitle}>{filteredVehicles.length} vehicles</Text>
       </View>
+
+      {/* W5: Show error display instead of silently swallowing errors */}
+      {vehiclesError && (
+        <ErrorDisplay
+          error={vehiclesError}
+          onRetry={() => refetchVehicles()}
+          compact
+        />
+      )}
 
       <View style={styles.searchContainer}>
         <Searchbar
@@ -287,17 +293,55 @@ export default function InspectionsScreen() {
         />
       </View>
 
+      {/* W26: Sort selector */}
+      <View style={styles.sortRow}>
+        <Menu
+          visible={sortMenu}
+          onDismiss={() => setSortMenu(false)}
+          anchor={
+            <TouchableOpacity onPress={() => setSortMenu(true)} style={styles.sortButton}>
+              <MaterialCommunityIcons name="sort" size={16} color={colors.textMuted} />
+              <Text style={styles.sortText}>
+                {sortBy === 'plate_number' ? 'Plate' : sortBy === 'last_inspection_date' ? 'Last Inspected' : 'Status'}
+              </Text>
+              <MaterialCommunityIcons name="chevron-down" size={14} color={colors.textMuted} />
+            </TouchableOpacity>
+          }
+        >
+          <Menu.Item
+            onPress={() => { setSortBy('plate_number'); setSortMenu(false); }}
+            title="Plate Number"
+            leadingIcon="sort-alphabetical-ascending"
+          />
+          <Menu.Item
+            onPress={() => { setSortBy('last_inspection_date'); setSortMenu(false); }}
+            title="Last Inspected"
+            leadingIcon="calendar-clock"
+          />
+          <Menu.Item
+            onPress={() => { setSortBy('actual_status'); setSortMenu(false); }}
+            title="Status"
+            leadingIcon="tag"
+          />
+        </Menu>
+      </View>
+
       <FlatList
         data={filteredVehicles}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         contentContainerStyle={styles.list}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} tintColor={colors.primary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+        initialNumToRender={15}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews={true}
         ListEmptyComponent={
-          <GlassCard style={styles.empty} padding={32}>
-            <MaterialCommunityIcons name="car-off" size={48} color={colors.textMuted} />
-            <Text style={styles.emptyText}>No vehicles found</Text>
-          </GlassCard>
+          <EmptyState
+            icon="clipboard-search-outline"
+            title="No vehicles found"
+            subtitle={debouncedSearch ? 'Try a different search term' : 'Vehicles will appear here for inspection'}
+          />
         }
       />
 
@@ -460,7 +504,7 @@ export default function InspectionsScreen() {
 
 const styles = StyleSheet.create({
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { paddingTop: 50, paddingHorizontal: 16, paddingBottom: 8 },
+  header: { paddingHorizontal: 16, paddingBottom: 8 },
   title: { color: colors.textPrimary, fontSize: 26, fontWeight: 'bold' },
   subtitle: { color: colors.textMuted, fontSize: 13 },
   searchContainer: { paddingHorizontal: 16, marginBottom: 10 },
@@ -472,6 +516,9 @@ const styles = StyleSheet.create({
   },
   filterContainer: { paddingHorizontal: 16, marginBottom: 10 },
   filters: {},
+  sortRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 16, marginBottom: 8 },
+  sortButton: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: glass.background.card, borderRadius: 8, borderWidth: 1, borderColor: glass.border.color },
+  sortText: { color: colors.textMuted, fontSize: 12, fontWeight: '500' },
   list: { padding: 8, paddingBottom: 100 },
   card: { marginHorizontal: 8, marginVertical: 4 },
   row: { flexDirection: 'row', alignItems: 'center' },

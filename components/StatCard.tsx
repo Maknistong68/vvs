@@ -45,7 +45,7 @@ function StatCard({ title, value, icon, color, gradient, testID }: StatCardProps
       accessibilityRole="text"
     >
       <LinearGradient
-        colors={['rgba(30, 41, 59, 0.6)', 'rgba(30, 41, 59, 0.4)']}
+        colors={['rgba(30, 41, 59, 0.6)', 'rgba(30, 41, 59, 0.4)'] as [string, string]}
         style={styles.baseGradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -73,8 +73,8 @@ export default memo(StatCard);
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    margin: 6,
+    width: '48%',
+    margin: '1%',
     minHeight: 110,
     borderRadius: glass.border.radius.md,
     borderWidth: glass.border.width,

@@ -5,20 +5,20 @@ import React, { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { logger } from './logger';
 
-// Create the query client with optimal settings
+// W18: Tuned staleTime and refetch settings per data type
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // Cache data for 5 minutes
+      // Cache vehicle data for 5 minutes (changes frequently)
       staleTime: 5 * 60 * 1000,
       // Keep data in cache for 30 minutes
       gcTime: 30 * 60 * 1000,
       // Retry failed requests up to 3 times
       retry: 3,
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-      // Refetch on window focus for fresh data
-      refetchOnWindowFocus: true,
-      // Don't refetch on reconnect immediately
+      // W18: Disable refetchOnWindowFocus for mobile (not useful on mobile)
+      refetchOnWindowFocus: false,
+      // Refetch on reconnect for fresh data after being offline
       refetchOnReconnect: 'always',
       // Network mode
       networkMode: 'online',
@@ -96,12 +96,28 @@ export function QueryProvider({ children }: QueryProviderProps) {
   );
 }
 
-// Utility to invalidate related queries
+// W12: Targeted cache invalidation instead of blanket invalidation
 export function invalidateVehicleQueries(companyId?: string) {
-  queryClient.invalidateQueries({ queryKey: queryKeys.vehicles.all });
+  // Only invalidate vehicle lists and stats, not individual vehicle details
+  queryClient.invalidateQueries({ queryKey: queryKeys.vehicles.list() });
+  queryClient.invalidateQueries({ queryKey: queryKeys.vehicles.stats() });
+  queryClient.invalidateQueries({ queryKey: queryKeys.vehicles.typeBreakdown() });
   if (companyId) {
+    queryClient.invalidateQueries({ queryKey: queryKeys.vehicles.list(companyId) });
     queryClient.invalidateQueries({ queryKey: queryKeys.vehicles.stats(companyId) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.vehicles.typeBreakdown(companyId) });
   }
+}
+
+// W12: Targeted invalidation for a specific vehicle detail
+export function invalidateVehicleDetail(id: string) {
+  queryClient.invalidateQueries({ queryKey: queryKeys.vehicles.detail(id) });
+}
+
+// W12: Invalidate vehicle lists for a specific company
+export function invalidateVehicleLists(companyId?: string) {
+  queryClient.invalidateQueries({ queryKey: queryKeys.vehicles.list(companyId) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.vehicles.stats(companyId) });
 }
 
 export function invalidateUserQueries(companyId?: string) {

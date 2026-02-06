@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, Alert, StatusBar } from 'react-native';
+import { View, StyleSheet, ScrollView, StatusBar } from 'react-native';
 import { Text, Button, ActivityIndicator, RadioButton, Menu } from 'react-native-paper';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -9,12 +9,15 @@ import { colors, statusColors, glass } from '../../lib/theme';
 import { INSPECTION_PERIOD_MONTHS, MENU_MAX_HEIGHT, getErrorMessage } from '../../lib/constants';
 import GlassCard from '../../components/GlassCard';
 import GlassBackground from '../../components/GlassBackground';
+import StatusBadge from '../../components/StatusBadge';
+import { useToast } from '../../components/ToastProvider';
 
 export default function VehicleDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
   const { isContractor } = useIsContractor();
+  const toast = useToast();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -39,7 +42,7 @@ export default function VehicleDetailScreen() {
       }
       if (reasonsRes.data) setRejectionReasons(reasonsRes.data);
     } catch {
-      Alert.alert('Error', 'Failed to load vehicle');
+      toast.showError('Failed to load vehicle');
       router.back();
     } finally {
       setLoading(false);
@@ -51,7 +54,7 @@ export default function VehicleDetailScreen() {
   const submitInspection = async () => {
     if (!vehicle) return;
     if (inspectionResult === 'rejected' && !selectedReason) {
-      Alert.alert('Error', 'Please select a rejection reason');
+      toast.showError('Please select a rejection reason');
       return;
     }
 
@@ -76,10 +79,10 @@ export default function VehicleDetailScreen() {
       const { error } = await supabase.from('vehicles_equipment').update(updateData).eq('id', vehicle.id);
       if (error) throw error;
 
-      Alert.alert('Success', `Vehicle ${inspectionResult === 'verified' ? 'verified' : 'rejected'} successfully`);
+      toast.showSuccess(`Vehicle ${inspectionResult === 'verified' ? 'verified' : 'rejected'} successfully`);
       router.back();
     } catch (err) {
-      Alert.alert('Error', getErrorMessage(err, 'Failed to submit inspection'));
+      toast.showError(getErrorMessage(err, 'Failed to submit inspection'));
     } finally {
       setSaving(false);
     }
@@ -131,12 +134,7 @@ export default function VehicleDetailScreen() {
             <View style={styles.headerInfo}>
               <Text style={styles.plateNumber}>{vehicle.plate_number}</Text>
               <Text style={styles.equipmentType}>{eq.label} - {getCategoryDisplay(vehicle.equipment_category)}</Text>
-              <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
-                <MaterialCommunityIcons name={sc.icon} size={14} color={sc.text} />
-                <Text style={[styles.statusText, { color: sc.text }]}>
-                  {vehicle.actual_status.charAt(0).toUpperCase() + vehicle.actual_status.slice(1)}
-                </Text>
-              </View>
+              <StatusBadge status={vehicle.actual_status} />
             </View>
           </View>
 
@@ -312,17 +310,6 @@ const styles = StyleSheet.create({
   headerInfo: { flex: 1, marginLeft: 16 },
   plateNumber: { color: colors.textPrimary, fontSize: 24, fontWeight: 'bold' },
   equipmentType: { color: colors.textSecondary, fontSize: 14, marginTop: 2 },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginTop: 8,
-    alignSelf: 'flex-start',
-    gap: 4
-  },
-  statusText: { fontSize: 12, fontWeight: '600' },
   divider: { height: 1, backgroundColor: glass.border.color, marginVertical: 16 },
   infoGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   infoItem: { width: '50%', marginBottom: 16 },

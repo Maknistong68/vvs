@@ -34,6 +34,10 @@ async function checkNetworkConnection(): Promise<boolean> {
 /**
  * Hook to monitor network status
  */
+// W13: Debounce interval to prevent duplicate checks
+const NETWORK_CHECK_DEBOUNCE_MS = 5000;
+const NETWORK_CHECK_INTERVAL_MS = 60000; // W13: Increased from 30s to 60s
+
 export function useNetworkStatus() {
   const [status, setStatus] = useState<NetworkStatus>({
     isConnected: true,
@@ -41,8 +45,16 @@ export function useNetworkStatus() {
     type: 'unknown',
   });
   const [isChecking, setIsChecking] = useState(false);
+  const lastCheckRef = useRef(0); // W13: Debounce guard
 
   const checkConnection = useCallback(async () => {
+    // W13: Skip if called within debounce window
+    const now = Date.now();
+    if (now - lastCheckRef.current < NETWORK_CHECK_DEBOUNCE_MS) {
+      return;
+    }
+    lastCheckRef.current = now;
+
     setIsChecking(true);
     try {
       const isConnected = await checkNetworkConnection();
@@ -79,8 +91,8 @@ export function useNetworkStatus() {
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
 
-    // Periodic check every 30 seconds
-    const interval = setInterval(checkConnection, 30000);
+    // W13: Periodic check every 60 seconds (increased from 30s)
+    const interval = setInterval(checkConnection, NETWORK_CHECK_INTERVAL_MS);
 
     return () => {
       subscription.remove();

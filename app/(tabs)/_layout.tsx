@@ -1,16 +1,15 @@
 import { Tabs } from 'expo-router';
-import { useAuth, useIsAdmin, useIsContractor } from '../../lib/auth';
+import { useAuth } from '../../lib/auth';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { colors, glass } from '../../lib/theme';
 import { View, Platform } from 'react-native';
 
 export default function TabsLayout() {
-  const { loading: authLoading } = useAuth();
-  const { isAdmin, loading: adminLoading } = useIsAdmin();
-  const { isContractor, loading: contractorLoading } = useIsContractor();
+  // W14: Single useAuth() call instead of 3 separate role hooks to reduce re-renders
+  const { role, loading } = useAuth();
 
-  // Wait for all role checks to complete
-  const loading = authLoading || adminLoading || contractorLoading;
+  const isAdmin = role === 'admin' || role === 'owner';
+  const isContractor = role === 'contractor';
 
   // Hide admin tab while loading OR if user is not admin
   const showAdminTab = !loading && isAdmin;

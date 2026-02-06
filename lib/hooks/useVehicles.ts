@@ -6,6 +6,7 @@ import { supabase, VehicleEquipment, DashboardStats, VehicleStatus } from '../su
 import { queryKeys, invalidateVehicleQueries } from '../queryClient';
 import { logger } from '../logger';
 import { DEFAULT_PAGE_SIZE } from '../constants';
+import { logStatusChange, logVehicleCreation, logVehicleDeletion, logBlacklistChange } from '../auditLogger';
 
 // Fetch dashboard stats - optimized to single query
 async function fetchDashboardStats(companyId?: string): Promise<DashboardStats> {
@@ -69,12 +70,16 @@ async function fetchEquipmentTypeBreakdown(companyId?: string): Promise<{ type: 
 }
 
 // Fetch vehicles list with pagination
+export type VehicleSortField = 'plate_number' | 'last_inspection_date' | 'actual_status' | 'driver_name';
+
 interface FetchVehiclesParams {
   companyId?: string;
   page?: number;
   pageSize?: number;
   status?: VehicleStatus | 'all';
   search?: string;
+  sortBy?: VehicleSortField;
+  sortDesc?: boolean;
 }
 
 async function fetchVehicles({
@@ -83,14 +88,16 @@ async function fetchVehicles({
   pageSize = DEFAULT_PAGE_SIZE,
   status,
   search,
+  sortBy = 'plate_number',
+  sortDesc = false,
 }: FetchVehiclesParams): Promise<{ vehicles: VehicleEquipment[]; total: number }> {
   const startTime = Date.now();
-  logger.debug('Fetching vehicles', { companyId, page, pageSize, status, search });
+  logger.debug('Fetching vehicles', { companyId, page, pageSize, status, search, sortBy });
 
   let query = supabase
     .from('vehicles_equipment')
     .select('*', { count: 'exact' })
-    .order('plate_number');
+    .order(sortBy, { ascending: !sortDesc, nullsFirst: false });
 
   if (companyId) {
     query = query.eq('company_id', companyId);
@@ -244,14 +251,55 @@ export function useVehicle(id: string) {
 }
 
 /**
- * Hook to update a vehicle
+ * Hook to update a vehicle with audit logging
  */
 export function useUpdateVehicle() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, updates }: { id: string; updates: Partial<VehicleEquipment> }) =>
-      updateVehicle(id, updates),
+    mutationFn: async ({
+      id,
+      updates,
+      userId,
+      companyId,
+      previousData,
+    }: {
+      id: string;
+      updates: Partial<VehicleEquipment>;
+      userId?: string;
+      companyId?: string;
+      previousData?: Partial<VehicleEquipment>;
+    }) => {
+      const result = await updateVehicle(id, updates);
+
+      // Log audit entries if userId provided
+      if (userId) {
+        // Log status change
+        if (previousData?.actual_status && updates.actual_status && previousData.actual_status !== updates.actual_status) {
+          await logStatusChange(
+            id,
+            previousData.actual_status,
+            updates.actual_status,
+            userId,
+            companyId,
+            { reason: updates.reason_for_rejection || undefined }
+          );
+        }
+
+        // Log blacklist change
+        if (previousData?.is_blacklisted !== undefined && updates.is_blacklisted !== undefined && previousData.is_blacklisted !== updates.is_blacklisted) {
+          await logBlacklistChange(
+            id,
+            previousData.is_blacklisted,
+            updates.is_blacklisted,
+            userId,
+            companyId
+          );
+        }
+      }
+
+      return result;
+    },
     onSuccess: (data, variables) => {
       // Update the cache
       queryClient.setQueryData(queryKeys.vehicles.detail(variables.id), data);
@@ -265,14 +313,28 @@ export function useUpdateVehicle() {
 }
 
 /**
- * Hook to create a vehicle
+ * Hook to create a vehicle with audit logging
  */
 export function useCreateVehicle() {
-  const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: (vehicle: Omit<VehicleEquipment, 'id' | 'created_at' | 'modified_at'>) =>
-      createVehicle(vehicle),
+    mutationFn: async ({
+      vehicle,
+      userId,
+      companyId,
+    }: {
+      vehicle: Omit<VehicleEquipment, 'id' | 'created_at' | 'modified_at'>;
+      userId?: string;
+      companyId?: string;
+    }) => {
+      const result = await createVehicle(vehicle);
+
+      // Log creation if userId provided
+      if (userId && result.id) {
+        await logVehicleCreation(result.id, vehicle.plate_number, userId, companyId);
+      }
+
+      return result;
+    },
     onSuccess: () => {
       invalidateVehicleQueries();
     },
@@ -280,27 +342,42 @@ export function useCreateVehicle() {
 }
 
 /**
- * Hook to delete a vehicle
+ * Hook to delete a vehicle with audit logging
  */
 export function useDeleteVehicle() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) => deleteVehicle(id),
-    onSuccess: (_, id) => {
+    mutationFn: async ({
+      id,
+      plateNumber,
+      userId,
+      companyId,
+    }: {
+      id: string;
+      plateNumber?: string;
+      userId?: string;
+      companyId?: string;
+    }) => {
+      await deleteVehicle(id);
+
+      // Log deletion if userId provided
+      if (userId) {
+        await logVehicleDeletion(id, plateNumber || 'Unknown', userId, companyId);
+      }
+    },
+    onSuccess: (_, variables) => {
       // Remove from cache
-      queryClient.removeQueries({ queryKey: queryKeys.vehicles.detail(id) });
+      queryClient.removeQueries({ queryKey: queryKeys.vehicles.detail(variables.id) });
       invalidateVehicleQueries();
     },
   });
 }
 
 /**
- * Hook to record an inspection (updates vehicle status)
+ * Hook to record an inspection (updates vehicle status) with audit logging
  */
 export function useRecordInspection() {
-  const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: async ({
       vehicleId,
@@ -308,12 +385,16 @@ export function useRecordInspection() {
       rejectionReason,
       notes,
       inspectorId,
+      companyId,
+      previousStatus,
     }: {
       vehicleId: string;
       status: VehicleStatus;
       rejectionReason?: string;
       notes?: string;
       inspectorId: string;
+      companyId?: string;
+      previousStatus?: VehicleStatus;
     }) => {
       const today = new Date();
       const nextInspection = new Date(today);
@@ -329,7 +410,21 @@ export function useRecordInspection() {
           : null,
       };
 
-      return updateVehicle(vehicleId, updates);
+      const result = await updateVehicle(vehicleId, updates);
+
+      // Log the status change
+      if (previousStatus && previousStatus !== status) {
+        await logStatusChange(
+          vehicleId,
+          previousStatus,
+          status,
+          inspectorId,
+          companyId,
+          { reason: rejectionReason, notes }
+        );
+      }
+
+      return result;
     },
     onSuccess: () => {
       invalidateVehicleQueries();

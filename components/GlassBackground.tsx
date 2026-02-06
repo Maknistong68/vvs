@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
 import { View, StyleSheet, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors, glass } from '../lib/theme';
+import { colors, glass, gradients } from '../lib/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -14,7 +14,7 @@ function GlassBackground({ children, testID }: GlassBackgroundProps) {
   return (
     <View style={styles.container} testID={testID}>
       <LinearGradient
-        colors={['#0F172A', '#1E293B']}
+        colors={gradients.background as [string, string]}
         style={styles.gradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}

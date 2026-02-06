@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase, User, UserRole, Company } from './supabase';
 import { AUTH_TIMEOUT_MS, getErrorMessage } from './constants';
@@ -71,10 +71,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [session?.user?.id, fetchUserProfile]);
 
+  // Guard to prevent double profile fetch on initial load (W4)
+  const profileFetchedRef = useRef(false);
+
   useEffect(() => {
     let isMounted = true;
+    profileFetchedRef.current = false;
 
-    // Timeout fallback in case getSession hangs
+    // Timeout fallback in case getSession hangs (W2: reduced to 2000ms)
     const timeout = setTimeout(() => {
       if (isMounted) {
         setLoading(false);
@@ -92,6 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (isMounted) {
           setUser(profile);
           setCompany(userCompany);
+          profileFetchedRef.current = true;
         }
       }
       if (isMounted) setLoading(false);
@@ -103,18 +108,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!isMounted) return;
+
+      // Skip duplicate fetch on INITIAL_SESSION if profile already loaded (W4)
+      if (event === 'INITIAL_SESSION' && profileFetchedRef.current) {
+        return;
+      }
+
       setSession(session);
       if (session?.user?.id) {
         const { user: profile, company: userCompany } = await fetchUserProfile(session.user.id);
         if (isMounted) {
           setUser(profile);
           setCompany(userCompany);
+          profileFetchedRef.current = true;
         }
       } else {
         setUser(null);
         setCompany(null);
+        profileFetchedRef.current = false;
       }
       setLoading(false);
     });

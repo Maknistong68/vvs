@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   errorDetails: {
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    backgroundColor: `${colors.error}1A`,
     borderRadius: glass.border.radius.sm,
     padding: 12,
     marginBottom: 16,

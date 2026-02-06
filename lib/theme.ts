@@ -46,10 +46,10 @@ export const colors = {
   surface: '#1E293B',
   surfaceLight: '#334155',
 
-  // Text - High contrast
+  // Text - High contrast (WCAG AA compliant)
   textPrimary: '#F8FAFC', // Slate 50
   textSecondary: '#CBD5E1', // Slate 300
-  textMuted: '#94A3B8', // Slate 400
+  textMuted: '#A1B0C5', // Brightened for 5.0:1 contrast ratio (W8)
 
   // Input
   inputBackground: 'rgba(30, 41, 59, 0.8)',
@@ -230,4 +230,38 @@ export const roleColors: Record<string, string> = {
   contractor: '#8B5CF6', // Accent/Purple
 };
 
-export default { colors, glass, glassStyles, gradients, paperTheme, statusColors, equipmentIcons, rejectionCategoryIcons, categoryColors, roleColors };
+// Typography scale (W15)
+export const typography = {
+  displayLarge: { fontSize: 28, lineHeight: 36, fontWeight: 'bold' as const },
+  displayMedium: { fontSize: 26, lineHeight: 34, fontWeight: 'bold' as const },
+  titleLarge: { fontSize: 22, lineHeight: 28, fontWeight: 'bold' as const },
+  titleMedium: { fontSize: 18, lineHeight: 24, fontWeight: '600' as const },
+  titleSmall: { fontSize: 16, lineHeight: 22, fontWeight: '600' as const },
+  bodyLarge: { fontSize: 15, lineHeight: 22, fontWeight: '500' as const },
+  bodyMedium: { fontSize: 14, lineHeight: 20, fontWeight: '400' as const },
+  bodySmall: { fontSize: 13, lineHeight: 18, fontWeight: '400' as const },
+  labelLarge: { fontSize: 14, lineHeight: 20, fontWeight: '600' as const },
+  labelMedium: { fontSize: 12, lineHeight: 16, fontWeight: '500' as const },
+  labelSmall: { fontSize: 11, lineHeight: 16, fontWeight: '500' as const },
+  caption: { fontSize: 10, lineHeight: 14, fontWeight: '600' as const },
+};
+
+// Spacing scale (W15)
+export const spacing = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 20,
+  xxl: 24,
+  xxxl: 32,
+};
+
+// WCAG-compliant status badge text colors (W8)
+export const statusTextColors = {
+  verified: '#86EFAC',
+  rejected: '#FCA5A5',
+  pending: '#FDE68A',
+};
+
+export default { colors, glass, glassStyles, gradients, paperTheme, statusColors, equipmentIcons, rejectionCategoryIcons, categoryColors, roleColors, typography, spacing, statusTextColors };
